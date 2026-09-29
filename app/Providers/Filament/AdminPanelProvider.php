@@ -65,6 +65,7 @@ class AdminPanelProvider extends PanelProvider
             ->login(Login::class)
             ->brandName('SISPAM 2')
             ->brandLogo(fn () => view('filament.marca'))
+            ->favicon(asset('img/favicon.svg'))
             ->font('Arial', provider: LocalFontProvider::class)
             ->darkMode(true)
             ->defaultThemeMode(ThemeMode::Light)
