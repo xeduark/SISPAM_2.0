@@ -1,0 +1,183 @@
+/*
+ * SISPAM 2 — Tema institucional del panel Filament.
+ * Fuente de verdad: estilos_generador_consolidado.md (raíz del proyecto).
+ * La paleta (primary / gray) se registra en AdminPanelProvider; aquí van
+ * sombras, radios, tipografía, encabezados de tabla y la marca.
+ */
+
+:root {
+    --sispam-card-soft: #f8fafb;
+    --sispam-border: #dfe4e8;
+    --sispam-text: #1f2933;
+    --sispam-muted: #66727d;
+    --sispam-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+    --sispam-transition:
+        background-color 0.25s ease,
+        border-color 0.25s ease,
+        transform 0.2s ease;
+}
+
+.dark {
+    --sispam-card-soft: #1d252a;
+    --sispam-border: #303a40;
+    --sispam-text: #edf2f4;
+    --sispam-muted: #aab5bc;
+    --sispam-shadow: 0 8px 25px rgba(0, 0, 0, 0.28);
+}
+
+/* Tipografía (§2) */
+.fi-body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: var(--sispam-text);
+}
+
+.fi-header-heading {
+    font-size: 25px;
+    font-weight: 700;
+}
+
+.fi-section-header-heading {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+/* Tarjetas: bordes suaves, radios y sombras discretas (§9, §13, §17, §18) */
+.fi-section,
+.fi-ta-ctn,
+.fi-wi-stats-overview-stat,
+.fi-fo-tabs {
+    border-radius: 12px;
+    box-shadow: var(--sispam-shadow);
+    transition: var(--sispam-transition);
+}
+
+.fi-simple-main {
+    border-radius: 16px;
+    box-shadow: var(--sispam-shadow);
+}
+
+.fi-wi-stats-overview-stat:hover {
+    transform: translateY(-2px);
+}
+
+/* Encabezados de tabla (§14) */
+.fi-ta-header-cell {
+    background-color: var(--sispam-card-soft);
+}
+
+.fi-ta-header-cell-label {
+    color: var(--sispam-muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+/* Botones (§8): en tema claro el hover oscurece el azul institucional */
+.fi-btn {
+    font-weight: 700;
+    border-radius: 8px;
+    transition: var(--sispam-transition);
+}
+
+:root:not(.dark) .fi-btn.fi-btn-color-primary:not([disabled]):hover {
+    background-color: rgb(var(--primary-700));
+}
+
+/* Insignias (§15) */
+.fi-badge {
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+/* Campos */
+.fi-input-wrp {
+    border-radius: 8px;
+    transition: var(--sispam-transition);
+}
+
+/* Encabezado institucional (§1, §6) */
+.fi-sidebar-header,
+.fi-topbar > nav {
+    min-height: 4.5rem;
+}
+
+.fi-logo {
+    height: auto !important;
+}
+
+.sispam-marca {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--sispam-text);
+}
+
+.sispam-marca__institucion {
+    font-size: 10px;
+    line-height: 1.15;
+    letter-spacing: 3px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.sispam-marca__divisor {
+    width: 1px;
+    height: 38px;
+    background: var(--sispam-border);
+}
+
+.sispam-marca__texto {
+    display: flex;
+    flex-direction: column;
+}
+
+.sispam-marca__titulo {
+    font-size: 20px;
+    line-height: 1.1;
+    font-weight: 700;
+}
+
+.sispam-marca__subtitulo {
+    color: var(--sispam-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* En el login la marca se muestra a tamaño completo */
+.fi-simple-layout .sispam-marca {
+    gap: 20px;
+}
+
+.fi-simple-layout .sispam-marca__institucion {
+    font-size: 16px;
+    letter-spacing: 5px;
+}
+
+.fi-simple-layout .sispam-marca__divisor {
+    height: 58px;
+}
+
+.fi-simple-layout .sispam-marca__titulo {
+    font-size: 28px;
+}
+
+.fi-simple-layout .sispam-marca__subtitulo {
+    font-size: 14px;
+}
+
+/* Teléfonos (§20) */
+@media (max-width: 600px) {
+    .fi-simple-layout .sispam-marca__institucion {
+        font-size: 11px;
+        letter-spacing: 3px;
+    }
+
+    .fi-simple-layout .sispam-marca__titulo {
+        font-size: 22px;
+    }
+
+    .sispam-marca__subtitulo {
+        white-space: normal;
+    }
+}
