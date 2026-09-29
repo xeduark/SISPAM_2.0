@@ -30,10 +30,18 @@ php artisan serve
 ```
 5. Abrir http://localhost:8000/admin
 
+## Autenticación (Authentik / OIDC)
+- No hay login local ni contraseñas: `/admin/login` solo tiene el botón "Iniciar sesión", que redirige a Authentik.
+- Flujo: `routes/web.php` → `App\Http\Controllers\Auth\AuthentikController` (Socialite + `socialiteproviders/authentik`).
+- El `preferred_username` (username) de Authentik ES el documento: se busca en `users.documento`.
+  Solo entran usuarios creados antes en el recurso Usuarios y con `activo = true`; los demás se rechazan.
+- Cerrar sesión redirige al end-session de Authentik (`App\Http\Responses\LogoutResponse`).
+- Variables `.env`: `AUTHENTIK_BASE_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`,
+  `AUTHENTIK_REDIRECT_URI="${APP_URL}/auth/authentik/callback"`, `AUTHENTIK_APP_SLUG`.
+
 ## Acceso local
 - URL: http://localhost:8000/admin
-- Email: admin@sispam.com
-- Password: Sispam2026*
+- Usuario administrador sembrado: documento `AdminSispam` (debe existir con ese username en Authentik; la contraseña se gestiona allá)
 
 ## Base de datos
 - Nombre: sispam_2

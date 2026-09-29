@@ -10,7 +10,6 @@ use App\Models\User;
 use Filament\Actions\DeleteAction;
 use Filament\Tables\Actions\DeleteAction as TableDeleteAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -36,25 +35,25 @@ class UserResourceTest extends TestCase
             ->assertCanSeeTableRecords($otros->push($this->admin));
     }
 
-    public function test_crea_un_usuario_con_la_contrasena_encriptada(): void
+    public function test_crea_un_usuario_sin_contrasena_local(): void
     {
         $sede = Sede::factory()->create();
 
         Livewire::test(CreateUser::class)
+            ->assertFormFieldDoesNotExist('password')
             ->fillForm([
                 'nombre' => 'Ana',
                 'apellido' => 'Pérez',
                 'documento' => '52123456',
                 'email' => 'ana@example.com',
                 'sede_id' => $sede->id,
-                'password' => 'Secreta123*',
                 'activo' => true,
             ])
             ->call('create')
             ->assertHasNoFormErrors();
 
         $user = User::where('documento', '52123456')->firstOrFail();
-        $this->assertTrue(Hash::check('Secreta123*', $user->password));
+        $this->assertNull($user->password);
         $this->assertSame('Ana Pérez', $user->nombre_completo);
     }
 
@@ -64,7 +63,6 @@ class UserResourceTest extends TestCase
             ->fillForm([
                 'nombre' => '',
                 'documento' => $this->admin->documento,
-                'password' => '',
             ])
             ->call('create')
             ->assertHasFormErrors([
@@ -72,22 +70,19 @@ class UserResourceTest extends TestCase
                 'apellido' => 'required',
                 'documento' => 'unique',
                 'sede_id' => 'required',
-                'password' => 'required',
             ]);
     }
 
-    public function test_editar_sin_contrasena_conserva_la_actual(): void
+    public function test_edita_un_usuario(): void
     {
-        $user = User::factory()->create(['password' => 'Original123*']);
+        $user = User::factory()->create();
 
         Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
-            ->fillForm(['nombre' => 'Cambiado', 'password' => ''])
+            ->fillForm(['nombre' => 'Cambiado'])
             ->call('save')
             ->assertHasNoFormErrors();
 
-        $user->refresh();
-        $this->assertSame('Cambiado', $user->nombre);
-        $this->assertTrue(Hash::check('Original123*', $user->password));
+        $this->assertSame('Cambiado', $user->refresh()->nombre);
     }
 
     public function test_editar_permite_conservar_su_propio_documento_y_email(): void
@@ -98,6 +93,21 @@ class UserResourceTest extends TestCase
             ->fillForm(['documento' => $user->documento, 'email' => $user->email])
             ->call('save')
             ->assertHasNoFormErrors();
+    }
+
+    public function test_el_documento_acepta_usernames_alfanumericos_de_authentik(): void
+    {
+        $user = User::factory()->create(['documento' => 'AdminSispam']);
+
+        Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
+            ->fillForm(['nombre' => 'Cambiado'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
+            ->fillForm(['documento' => 'admin sispam!'])
+            ->call('save')
+            ->assertHasFormErrors(['documento' => 'alpha_num']);
     }
 
     public function test_un_usuario_no_puede_eliminarse_a_si_mismo(): void

@@ -26,7 +26,6 @@ class User extends Authenticatable implements FilamentUser, HasName
         'apellido',
         'documento',
         'email',
-        'password',
         'sede_id',
         'activo',
     ];
@@ -49,7 +48,6 @@ class User extends Authenticatable implements FilamentUser, HasName
     protected function casts(): array
     {
         return [
-            'password' => 'hashed',
             'activo' => 'boolean',
         ];
     }

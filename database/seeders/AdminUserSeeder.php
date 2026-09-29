@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Models\Sede;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class AdminUserSeeder extends Seeder
 {
@@ -16,12 +15,11 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         User::updateOrCreate(
-            ['documento' => '1000000000'],
+            ['documento' => 'AdminSispam'],
             [
                 'nombre' => 'Administrador',
                 'apellido' => 'del Sistema',
                 'email' => 'admin@sispam.com',
-                'password' => Hash::make('Sispam2026*'),
                 'sede_id' => Sede::where('nombre', 'Sede Principal')->value('id'),
                 'activo' => true,
             ],

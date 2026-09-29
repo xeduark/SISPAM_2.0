@@ -40,8 +40,10 @@ class UserResource extends Resource
                     ->maxLength(100),
                 Forms\Components\TextInput::make('documento')
                     ->label('Documento de identidad')
+                    ->helperText('Debe coincidir con el nombre de usuario en Authentik.')
                     ->required()
-                    ->numeric()
+                    ->alphaNum()
+                    ->maxLength(20)
                     ->unique(ignoreRecord: true),
                 Forms\Components\TextInput::make('email')
                     ->label('Correo electrónico')
@@ -55,16 +57,6 @@ class UserResource extends Resource
                     ->required()
                     ->searchable()
                     ->preload(),
-                Forms\Components\TextInput::make('password')
-                    ->label('Contraseña')
-                    ->password()
-                    ->revealable()
-                    ->required(fn (string $operation): bool => $operation === 'create')
-                    ->dehydrated(fn (?string $state): bool => filled($state))
-                    ->helperText(fn (string $operation): ?string => $operation === 'edit'
-                        ? 'Déjalo vacío para conservar la contraseña actual'
-                        : null)
-                    ->maxLength(255),
                 Forms\Components\Toggle::make('activo')
                     ->label('Usuario activo')
                     ->default(true),
