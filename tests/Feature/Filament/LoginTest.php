@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Filament;
 
-use App\Filament\Pages\Auth\Login;
 use App\Models\User;
-use Filament\Facades\Filament;
+use Exception;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Livewire\Livewire;
+use Laravel\Socialite\Facades\Socialite;
+use Mockery;
+use SocialiteProviders\Authentik\Provider as AuthentikProvider;
+use SocialiteProviders\Manager\OAuth2\User as SocialiteUser;
 use Tests\TestCase;
 
 class LoginTest extends TestCase
@@ -17,66 +19,121 @@ class LoginTest extends TestCase
     {
         parent::setUp();
 
-        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        config([
+            'services.authentik.base_url' => 'https://auth.example.com',
+            'services.authentik.client_id' => 'sispam',
+            'services.authentik.client_secret' => 'secreto',
+            'services.authentik.redirect' => 'http://localhost/auth/authentik/callback',
+            'services.authentik.app_slug' => 'sispam',
+        ]);
     }
 
-    public function test_la_pagina_de_login_pide_documento_y_no_email(): void
+    /**
+     * Simula la respuesta de Authentik en el callback.
+     */
+    private function authentikDevuelve(?string $preferredUsername): void
+    {
+        $socialiteUser = (new SocialiteUser)->setRaw([
+            'sub' => 'abc123',
+            'preferred_username' => $preferredUsername,
+            'email' => 'persona@example.com',
+        ]);
+
+        $provider = Mockery::mock(AuthentikProvider::class);
+        $provider->shouldReceive('user')->andReturn($socialiteUser);
+
+        Socialite::shouldReceive('driver')->with('authentik')->andReturn($provider);
+    }
+
+    public function test_la_pagina_de_login_solo_muestra_el_boton_de_authentik(): void
     {
         $this->get('/admin/login')
             ->assertOk()
-            ->assertSee('Documento de identidad')
-            ->assertSeeHtml('autocomplete="username"')
-            ->assertDontSeeHtml('type="email"');
+            ->assertSee('Iniciar sesión')
+            ->assertSee(route('auth.authentik.redirect'), escape: false)
+            ->assertDontSeeHtml('type="password"')
+            ->assertDontSee('Documento de identidad');
     }
 
-    public function test_un_usuario_activo_ingresa_con_documento_y_contrasena(): void
+    public function test_el_boton_redirige_a_authentik(): void
     {
-        $user = User::factory()->create(['documento' => '1000000000', 'password' => 'Sispam2026*']);
+        $response = $this->get(route('auth.authentik.redirect'));
 
-        Livewire::test(Login::class)
-            ->fillForm(['documento' => '1000000000', 'password' => 'Sispam2026*'])
-            ->call('authenticate')
-            ->assertHasNoFormErrors()
-            ->assertRedirect('/admin');
+        $response->assertRedirect();
+        $this->assertStringStartsWith(
+            'https://auth.example.com/application/o/authorize/',
+            $response->headers->get('Location'),
+        );
+    }
+
+    public function test_sin_configuracion_de_authentik_vuelve_al_login_con_aviso(): void
+    {
+        config(['services.authentik.base_url' => null]);
+
+        $this->get(route('auth.authentik.redirect'))->assertRedirect('/admin/login');
+
+        $this->assertStringContainsString('no está configurado', json_encode(session('filament.notifications'), JSON_UNESCAPED_UNICODE));
+    }
+
+    public function test_un_usuario_registrado_y_activo_ingresa(): void
+    {
+        $user = User::factory()->create(['documento' => '1000000000']);
+        $this->authentikDevuelve('1000000000');
+
+        $this->get(route('auth.authentik.callback'))->assertRedirect('/admin');
 
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_credenciales_invalidas_muestran_error_en_espanol(): void
+    public function test_un_usuario_que_no_existe_en_sispam_es_rechazado(): void
     {
-        User::factory()->create(['documento' => '1000000000', 'password' => 'Sispam2026*']);
+        User::factory()->create(['documento' => '1000000000']);
+        $this->authentikDevuelve('9999999999');
 
-        Livewire::test(Login::class)
-            ->fillForm(['documento' => '1000000000', 'password' => 'incorrecta'])
-            ->call('authenticate')
-            ->assertHasFormErrors(['documento'])
-            ->assertSee('Las credenciales no coinciden con nuestros registros.');
+        $this->get(route('auth.authentik.callback'))->assertRedirect('/admin/login');
+
+        $this->assertGuest();
+        $this->assertStringContainsString('no está registrado en SISPAM', json_encode(session('filament.notifications'), JSON_UNESCAPED_UNICODE));
+    }
+
+    public function test_un_usuario_inactivo_es_rechazado(): void
+    {
+        User::factory()->inactivo()->create(['documento' => '2000000000']);
+        $this->authentikDevuelve('2000000000');
+
+        $this->get(route('auth.authentik.callback'))->assertRedirect('/admin/login');
+
+        $this->assertGuest();
+        $this->assertStringContainsString('inactivo', json_encode(session('filament.notifications'), JSON_UNESCAPED_UNICODE));
+    }
+
+    public function test_un_error_de_authentik_no_autentica(): void
+    {
+        $provider = Mockery::mock(AuthentikProvider::class);
+        $provider->shouldReceive('user')->andThrow(new Exception('state inválido'));
+        Socialite::shouldReceive('driver')->with('authentik')->andReturn($provider);
+
+        $this->get(route('auth.authentik.callback'))->assertRedirect('/admin/login');
 
         $this->assertGuest();
     }
 
-    public function test_el_email_no_sirve_como_credencial(): void
+    public function test_cerrar_sesion_tambien_cierra_la_sesion_en_authentik(): void
     {
-        User::factory()->create(['email' => 'admin@sispam.com', 'password' => 'Sispam2026*']);
-
-        Livewire::test(Login::class)
-            ->fillForm(['documento' => 'admin@sispam.com', 'password' => 'Sispam2026*'])
-            ->call('authenticate')
-            ->assertHasFormErrors(['documento']);
+        $this->actingAs(User::factory()->create())
+            ->post(route('filament.admin.auth.logout'))
+            ->assertRedirect('https://auth.example.com/application/o/sispam/end-session/');
 
         $this->assertGuest();
     }
 
-    public function test_un_usuario_inactivo_no_puede_ingresar(): void
+    public function test_sin_slug_configurado_cerrar_sesion_vuelve_al_login(): void
     {
-        User::factory()->inactivo()->create(['documento' => '2000000000', 'password' => 'Sispam2026*']);
+        config(['services.authentik.app_slug' => null]);
 
-        Livewire::test(Login::class)
-            ->fillForm(['documento' => '2000000000', 'password' => 'Sispam2026*'])
-            ->call('authenticate')
-            ->assertHasFormErrors(['documento']);
-
-        $this->assertGuest();
+        $this->actingAs(User::factory()->create())
+            ->post(route('filament.admin.auth.logout'))
+            ->assertRedirect('/admin/login');
     }
 
     public function test_un_usuario_desactivado_con_sesion_abierta_pierde_acceso_al_panel(): void
