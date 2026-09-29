@@ -13,12 +13,13 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
-            $table->string('nombre_completo')->nullable();
-            $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
+            $table->string('nombre');
+            $table->string('apellido');
+            $table->string('documento')->unique(); // Credencial de login
+            $table->string('email')->nullable()->unique(); // Solo para recuperación, no se usa para login
             $table->string('password');
-            $table->boolean('is_admin')->default(false);
+            $table->foreignId('sede_id')->constrained('sedes')->restrictOnDelete();
+            $table->boolean('activo')->default(true);
             $table->rememberToken();
             $table->timestamps();
         });

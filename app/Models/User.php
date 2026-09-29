@@ -2,15 +2,16 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasName;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, HasName
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
@@ -21,11 +22,13 @@ class User extends Authenticatable implements FilamentUser
      * @var list<string>
      */
     protected $fillable = [
-        'name',
-        'nombre_completo',
+        'nombre',
+        'apellido',
+        'documento',
         'email',
         'password',
-        'is_admin',
+        'sede_id',
+        'activo',
     ];
 
     /**
@@ -46,21 +49,34 @@ class User extends Authenticatable implements FilamentUser
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'is_admin' => 'boolean',
+            'activo' => 'boolean',
         ];
     }
 
     /**
-     * En local todos los usuarios acceden al panel; en otros entornos solo los administradores.
+     * @return BelongsTo<Sede, $this>
+     */
+    public function sede(): BelongsTo
+    {
+        return $this->belongsTo(Sede::class);
+    }
+
+    public function getNombreCompletoAttribute(): string
+    {
+        return "{$this->nombre} {$this->apellido}";
+    }
+
+    /**
+     * Solo los usuarios activos pueden ingresar al panel.
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        if (app()->environment('local')) {
-            return true;
-        }
+        return $this->activo;
+    }
 
-        return $this->is_admin;
+    public function getFilamentName(): string
+    {
+        return $this->nombre_completo;
     }
 }
