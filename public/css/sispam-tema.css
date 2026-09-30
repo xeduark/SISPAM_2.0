@@ -84,6 +84,24 @@
     background-color: rgb(var(--primary-700));
 }
 
+/*
+ * «Consultar en Savia»: el botón va en su propia fila, separado de los campos
+ * de búsqueda por una línea fina, para que se lea como una acción y no como
+ * un campo más del formulario (§8, §17).
+ */
+.sispam-consulta-savia {
+    margin-top: 4px;
+    padding-top: 18px;
+    border-top: 1px solid var(--sispam-border);
+}
+
+/* Es la acción principal de la sección, así que ocupa un ancho generoso.
+   En pantallas angostas se queda en el 100% sin desbordar. */
+.sispam-consulta-savia .fi-btn {
+    min-width: min(360px, 100%);
+    padding-inline: 2rem;
+}
+
 /* Insignias (§15) */
 .fi-badge {
     border-radius: 999px;
