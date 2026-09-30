@@ -2,15 +2,16 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasName;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, HasName
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
@@ -21,12 +22,18 @@ class User extends Authenticatable implements FilamentUser
      * @var list<string>
      */
     protected $fillable = [
-        'name',
-        'nombre_completo',
+        'nombre',
+        'apellido',
+        'documento',
         'email',
-        'password',
-        'is_admin',
+        'sede_id',
+        'activo',
+        'roles',
+        'es_administrador',
     ];
+
+    /** Permisos de la matriz ya resueltos, para no consultarlos en cada verificación. */
+    private ?array $permisosResueltos = null;
 
     /**
      * The attributes that should be hidden for serialization.
@@ -46,21 +53,54 @@ class User extends Authenticatable implements FilamentUser
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_admin' => 'boolean',
+            'activo' => 'boolean',
+            'roles' => 'array',
+            'es_administrador' => 'boolean',
         ];
     }
 
     /**
-     * En local todos los usuarios acceden al panel; en otros entornos solo los administradores.
+     * Si la matriz de permisos le deja hacer `modulo.accion` (p. ej. «pacientes.crear»).
+     * Los roles son los grupos de Authentik; el administrador puede todo.
      */
-    public function canAccessPanel(Panel $panel): bool
+    public function puede(string $permiso): bool
     {
-        if (app()->environment('local')) {
+        if ($this->es_administrador) {
             return true;
         }
 
-        return $this->is_admin;
+        [$modulo, $accion] = explode('.', $permiso, 2) + [1 => null];
+
+        $this->permisosResueltos ??= Rol::whereIn('nombre', $this->roles ?? [])
+            ->pluck('permisos')
+            ->reduce(fn (array $todos, ?array $permisos): array => array_merge_recursive($todos, $permisos ?? []), []);
+
+        return in_array($accion, $this->permisosResueltos[$modulo] ?? [], true);
+    }
+
+    /**
+     * @return BelongsTo<Sede, $this>
+     */
+    public function sede(): BelongsTo
+    {
+        return $this->belongsTo(Sede::class);
+    }
+
+    public function getNombreCompletoAttribute(): string
+    {
+        return "{$this->nombre} {$this->apellido}";
+    }
+
+    /**
+     * Solo los usuarios activos pueden ingresar al panel.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $this->activo;
+    }
+
+    public function getFilamentName(): string
+    {
+        return $this->nombre_completo;
     }
 }
