@@ -37,7 +37,7 @@ class ConsultarPacienteTest extends TestCase
             'savia.auditar' => false,
         ]);
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->administrador()->create());
     }
 
     private function respuestaSavia(array $extra = []): array

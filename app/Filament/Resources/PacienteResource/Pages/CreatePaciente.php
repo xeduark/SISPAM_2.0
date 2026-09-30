@@ -6,6 +6,7 @@ use App\Filament\Resources\PacienteResource;
 use App\Filament\Resources\PacienteResource\Concerns\AvisaSobreSavia;
 use App\Filament\Resources\PacienteResource\Concerns\MuestraAvisosDeSavia;
 use App\Models\Paciente;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
@@ -29,18 +30,26 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
     }
 
     /**
-     * Mientras la consulta a Savia no traiga al afiliado no hay nada que
-     * guardar: se ocultan los botones de guardar y solo queda «Cancelar».
-     *
-     * Se ocultan con un closure en vez de quitarlos de la lista porque
-     * Filament cachea estas acciones al arrancar la petición, antes de que
-     * corra la consulta; `hidden()` sí se evalúa al renderizar.
+     * Los botones de guardar van en el último paso del asistente; abajo
+     * solo queda «Cancelar», que sirve incluso antes de consultar.
      */
     protected function getFormActions(): array
     {
+        return [$this->getCancelFormAction()];
+    }
+
+    /**
+     * Botones del último paso del asistente. Mientras la consulta a Savia no
+     * traiga al afiliado no hay nada que guardar, así que se ocultan con un
+     * closure: `hidden()` se evalúa al renderizar, después de la consulta.
+     *
+     * @return array<Action>
+     */
+    public function accionesDeGuardado(): array
+    {
         $sinConsulta = fn (): bool => ! $this->hayConsultaVigente();
 
-        return [
+        return array_map(fn (Action $accion): Action => $accion->livewire($this), [
             $this->getCreateFormAction()
                 // El mismo flujo sirve para registrar y para actualizar: el botón
                 // dice lo que de verdad va a pasar.
@@ -53,8 +62,7 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
                     // Crear otro solo tiene sentido cuando de verdad se está creando.
                     ->hidden(fn (): bool => $sinConsulta() || $this->pacienteExistente() !== null)]
                 : []),
-            $this->getCancelFormAction(),
-        ];
+        ]);
     }
 
     /**
@@ -101,7 +109,13 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
             'numero_documento' => $data['numero_documento'],
         ]);
 
+        $soporte = PacienteResource::separarSoporte($data);
+
         $paciente->fill($data)->save();
+
+        if ($soporte !== null) {
+            $paciente->soportes()->create($soporte);
+        }
 
         return $paciente;
     }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\ControlaPermisos;
 use App\Filament\Resources\PacienteResource\Concerns\AvisaSobreSavia;
 use App\Filament\Resources\PacienteResource\Pages;
 use App\Filament\Resources\PacienteResource\ResultadoConsulta;
@@ -26,6 +27,10 @@ use Livewire\Component;
 
 class PacienteResource extends Resource
 {
+    use ControlaPermisos;
+
+    protected static string $modulo = 'pacientes';
+
     protected static ?string $model = Paciente::class;
 
     protected static ?string $modelLabel = 'Paciente';
@@ -179,266 +184,301 @@ class PacienteResource extends Resource
                         ])
                         ->visible(fn (Forms\Get $get): bool => filled($get('cambios_savia'))),
 
-                    Forms\Components\Section::make('Confirmar con el paciente')
-                        ->description('El teléfono y la dirección son datos de SISPAM, no de Savia. Confírmalos en cada registro: si el medicamento no está en la sede, hay que enviarlo a domicilio.')
-                        ->icon('heroicon-o-phone')
-                        ->iconColor('warning')
-                        ->schema([
-                            Forms\Components\TextInput::make('telefono_movil')
-                                ->label('Teléfono móvil')
-                                ->tel()
-                                ->required()
-                                ->maxLength(30)
-                                ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'telefono_movil')),
-                            Forms\Components\TextInput::make('telefono')
-                                ->label('Teléfono fijo o alterno')
-                                ->tel()
-                                ->maxLength(30)
-                                ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'telefono')),
-                            Forms\Components\TextInput::make('ciudad_residencia')
-                                ->label('Ciudad o municipio')
-                                ->required()
-                                ->maxLength(80)
-                                ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'ciudad_residencia')),
-                            Forms\Components\TextInput::make('direccion')
-                                ->label('Dirección')
-                                ->required()
-                                ->maxLength(180)
-                                ->columnSpan(2)
-                                ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'direccion')),
-                            Forms\Components\TextInput::make('barrio')
-                                ->label('Barrio')
-                                ->maxLength(80)
-                                ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'barrio')),
-                            Forms\Components\Textarea::make('indicaciones_entrega')
-                                ->label('Indicaciones de entrega')
-                                ->placeholder('Conjunto, torre, apartamento, punto de referencia…')
-                                ->helperText('Lo que necesita quien lleva el medicamento para llegar.')
-                                ->rows(2)
-                                ->maxLength(255)
-                                ->columnSpanFull(),
-                            Forms\Components\Checkbox::make('contacto_confirmado')
-                                ->label('Confirmé teléfono y dirección con el paciente')
-                                ->accepted()
-                                ->validationMessages([
-                                    'accepted' => 'Debes confirmar el teléfono y la dirección con el paciente antes de guardar.',
-                                ])
-                                // No es columna: lo que se guarda es la fecha y quién confirmó.
-                                ->dehydrated(false)
-                                ->columnSpanFull(),
-                        ])
-                        ->columns(3),
+                    Forms\Components\Wizard::make([
+                        Forms\Components\Wizard\Step::make('Identificación')
+                            ->description('Datos del afiliado')
+                            ->icon('heroicon-o-identification')
+                            ->schema([
+                                Forms\Components\TextInput::make('primer_nombre')
+                                    ->label('Primer nombre')
+                                    ->required()
+                                    ->maxLength(60),
+                                Forms\Components\TextInput::make('segundo_nombre')
+                                    ->label('Segundo nombre')
+                                    ->maxLength(60),
+                                Forms\Components\TextInput::make('primer_apellido')
+                                    ->label('Primer apellido')
+                                    ->required()
+                                    ->maxLength(60),
+                                Forms\Components\TextInput::make('segundo_apellido')
+                                    ->label('Segundo apellido')
+                                    ->maxLength(60),
+                                Forms\Components\DatePicker::make('fecha_nacimiento')
+                                    ->label('Fecha de nacimiento')
+                                    ->displayFormat('d/m/Y')
+                                    ->maxDate(now()),
+                                Forms\Components\TextInput::make('sexo')
+                                    ->label('Sexo')
+                                    ->maxLength(20),
+                                Forms\Components\TextInput::make('genero_identificacion')
+                                    ->label('Género de identificación')
+                                    ->maxLength(40),
+                                Forms\Components\TextInput::make('estado_civil')
+                                    ->label('Estado civil')
+                                    ->maxLength(40),
+                            ])
+                            ->columns(3),
 
-                    Forms\Components\Section::make('Identificación del afiliado')
-                        ->description('Datos que devuelve Savia. Se pueden corregir, pero al actualizar desde Savia se reemplazan.')
-                        ->schema([
-                            Forms\Components\TextInput::make('primer_nombre')
-                                ->label('Primer nombre')
-                                ->required()
-                                ->maxLength(60),
-                            Forms\Components\TextInput::make('segundo_nombre')
-                                ->label('Segundo nombre')
-                                ->maxLength(60),
-                            Forms\Components\TextInput::make('primer_apellido')
-                                ->label('Primer apellido')
-                                ->required()
-                                ->maxLength(60),
-                            Forms\Components\TextInput::make('segundo_apellido')
-                                ->label('Segundo apellido')
-                                ->maxLength(60),
-                            Forms\Components\DatePicker::make('fecha_nacimiento')
-                                ->label('Fecha de nacimiento')
-                                ->displayFormat('d/m/Y')
-                                ->maxDate(now()),
-                            Forms\Components\TextInput::make('sexo')
-                                ->label('Sexo')
-                                ->maxLength(20),
-                            Forms\Components\TextInput::make('genero_identificacion')
-                                ->label('Género de identificación')
-                                ->maxLength(40),
-                            Forms\Components\TextInput::make('estado_civil')
-                                ->label('Estado civil')
-                                ->maxLength(40),
-                        ])
-                        ->columns(3)
-                        ->collapsible(),
+                        Forms\Components\Wizard\Step::make('Ubicación y contacto')
+                            ->description('Confirmar con el paciente')
+                            ->icon('heroicon-o-map-pin')
+                            ->schema([
+                                Forms\Components\Section::make('Confirmar con el paciente')
+                                    ->description('El teléfono y la dirección son datos de SISPAM, no de Savia. Confírmalos en cada registro: si el medicamento no está en la sede, hay que enviarlo a domicilio.')
+                                    ->icon('heroicon-o-phone')
+                                    ->iconColor('warning')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('telefono_movil')
+                                            ->label('Teléfono móvil')
+                                            ->tel()
+                                            ->required()
+                                            ->maxLength(30)
+                                            ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'telefono_movil')),
+                                        Forms\Components\TextInput::make('telefono')
+                                            ->label('Teléfono fijo o alterno')
+                                            ->tel()
+                                            ->maxLength(30)
+                                            ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'telefono')),
+                                        Forms\Components\TextInput::make('ciudad_residencia')
+                                            ->label('Ciudad o municipio')
+                                            ->required()
+                                            ->maxLength(80)
+                                            ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'ciudad_residencia')),
+                                        Forms\Components\TextInput::make('direccion')
+                                            ->label('Dirección')
+                                            ->required()
+                                            ->maxLength(180)
+                                            ->columnSpan(2)
+                                            ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'direccion')),
+                                        Forms\Components\TextInput::make('barrio')
+                                            ->label('Barrio')
+                                            ->maxLength(80)
+                                            ->helperText(fn (Forms\Get $get): ?string => static::referenciaSavia($get, 'barrio')),
+                                        Forms\Components\Textarea::make('indicaciones_entrega')
+                                            ->label('Indicaciones de entrega')
+                                            ->placeholder('Conjunto, torre, apartamento, punto de referencia…')
+                                            ->helperText('Lo que necesita quien lleva el medicamento para llegar.')
+                                            ->rows(2)
+                                            ->maxLength(255)
+                                            ->columnSpanFull(),
+                                        Forms\Components\Checkbox::make('contacto_confirmado')
+                                            ->label('Confirmé teléfono y dirección con el paciente')
+                                            ->accepted()
+                                            ->validationMessages([
+                                                'accepted' => 'Debes confirmar el teléfono y la dirección con el paciente antes de guardar.',
+                                            ])
+                                            // No es columna: lo que se guarda es la fecha y quién confirmó.
+                                            ->dehydrated(false)
+                                            ->columnSpanFull(),
+                                    ])
+                                    ->columns(3),
 
-                    Forms\Components\Section::make('Condición de salud')
-                        ->schema([
-                            Forms\Components\TextInput::make('discapacidad')
-                                ->label('Discapacidad')
-                                ->maxLength(20),
-                            Forms\Components\TextInput::make('tipo_discapacidad')
-                                ->label('Tipo de discapacidad')
-                                ->maxLength(60),
-                            Forms\Components\TextInput::make('victima_ley_1448')
-                                ->label('Víctima Ley 1448')
-                                ->maxLength(20),
-                        ])
-                        ->columns(3)
-                        ->collapsible()
-                        ->collapsed(),
+                                // El teléfono, la dirección, el barrio y la ciudad viven en
+                                // «Confirmar con el paciente»: son datos de SISPAM, no de Savia.
+                                Forms\Components\Fieldset::make('Residencia según Savia')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('comuna')
+                                            ->label('Comuna')
+                                            ->maxLength(80),
+                                        Forms\Components\TextInput::make('municipio_afiliacion')
+                                            ->label('Municipio de afiliación')
+                                            ->maxLength(80),
+                                        Forms\Components\TextInput::make('departamento_afiliacion')
+                                            ->label('Departamento de afiliación')
+                                            ->maxLength(80),
+                                        Forms\Components\TextInput::make('email')
+                                            ->label('Correo electrónico')
+                                            ->email()
+                                            ->maxLength(120),
+                                    ])
+                                    ->columns(4),
+                            ]),
 
-                    Forms\Components\Section::make('Estado de la afiliación')
-                        ->schema([
-                            Forms\Components\TextInput::make('estado_afiliacion')
-                                ->label('Estado de afiliación')
-                                ->maxLength(40),
-                            Forms\Components\TextInput::make('regimen')
-                                ->label('Régimen')
-                                ->maxLength(40),
-                            Forms\Components\TextInput::make('tipo_afiliado')
-                                ->label('Tipo de afiliado')
-                                ->maxLength(40),
-                            Forms\Components\TextInput::make('modalidad_subsidio')
-                                ->label('Modalidad de subsidio')
-                                ->maxLength(40),
-                            Forms\Components\TextInput::make('causa_estado')
-                                ->label('Causa del estado')
-                                ->maxLength(120),
-                            Forms\Components\TextInput::make('consecutivo_bdua')
-                                ->label('Consecutivo BDUA')
-                                ->maxLength(30),
-                            Forms\Components\TextInput::make('codigo_entidad')
-                                ->label('Código de entidad')
-                                ->maxLength(20),
-                            Forms\Components\DatePicker::make('fecha_afiliacion_sgsss')
-                                ->label('Fecha afiliación SGSSS')
-                                ->displayFormat('d/m/Y'),
-                            Forms\Components\DatePicker::make('fecha_afiliacion_entidad')
-                                ->label('Fecha afiliación entidad')
-                                ->displayFormat('d/m/Y'),
-                            Forms\Components\DatePicker::make('fecha_suspension')
-                                ->label('Fecha de suspensión')
-                                ->displayFormat('d/m/Y'),
-                            Forms\Components\DatePicker::make('fecha_retiro')
-                                ->label('Fecha de retiro')
-                                ->displayFormat('d/m/Y'),
-                        ])
-                        ->columns(3)
-                        ->collapsible(),
+                        Forms\Components\Wizard\Step::make('Afiliación')
+                            ->description('EPS, IPS y núcleo familiar')
+                            ->icon('heroicon-o-shield-check')
+                            ->schema([
+                                Forms\Components\Fieldset::make('Estado de la afiliación')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('estado_afiliacion')
+                                            ->label('Estado de afiliación')
+                                            ->maxLength(40),
+                                        Forms\Components\TextInput::make('regimen')
+                                            ->label('Régimen')
+                                            ->maxLength(40),
+                                        Forms\Components\TextInput::make('tipo_afiliado')
+                                            ->label('Tipo de afiliado')
+                                            ->maxLength(40),
+                                        Forms\Components\TextInput::make('modalidad_subsidio')
+                                            ->label('Modalidad de subsidio')
+                                            ->maxLength(40),
+                                        Forms\Components\TextInput::make('causa_estado')
+                                            ->label('Causa del estado')
+                                            ->maxLength(120),
+                                        Forms\Components\TextInput::make('consecutivo_bdua')
+                                            ->label('Consecutivo BDUA')
+                                            ->maxLength(30),
+                                        Forms\Components\TextInput::make('codigo_entidad')
+                                            ->label('Código de entidad')
+                                            ->maxLength(20),
+                                        Forms\Components\DatePicker::make('fecha_afiliacion_sgsss')
+                                            ->label('Fecha afiliación SGSSS')
+                                            ->displayFormat('d/m/Y'),
+                                        Forms\Components\DatePicker::make('fecha_afiliacion_entidad')
+                                            ->label('Fecha afiliación entidad')
+                                            ->displayFormat('d/m/Y'),
+                                        Forms\Components\DatePicker::make('fecha_suspension')
+                                            ->label('Fecha de suspensión')
+                                            ->displayFormat('d/m/Y'),
+                                        Forms\Components\DatePicker::make('fecha_retiro')
+                                            ->label('Fecha de retiro')
+                                            ->displayFormat('d/m/Y'),
+                                    ])
+                                    ->columns(3),
 
-                    Forms\Components\Section::make('Núcleo familiar')
-                        ->schema([
-                            Forms\Components\Select::make('tipo_documento_cabeza_familia')
-                                ->label('Tipo doc. cabeza de familia')
-                                ->options(config('savia.tipos_documento')),
-                            Forms\Components\TextInput::make('documento_cabeza_familia')
-                                ->label('Documento cabeza de familia')
-                                ->maxLength(20),
-                            Forms\Components\TextInput::make('parentesco_cabeza_familia')
-                                ->label('Parentesco')
-                                ->maxLength(40),
-                        ])
-                        ->columns(3)
-                        ->collapsible()
-                        ->collapsed(),
+                                Forms\Components\Fieldset::make('IPS y portabilidad')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('codigo_ips')
+                                            ->label('Código IPS')
+                                            ->maxLength(20),
+                                        Forms\Components\TextInput::make('ips_primaria')
+                                            ->label('IPS primaria')
+                                            ->maxLength(120),
+                                        Forms\Components\TextInput::make('sede_ips_primaria')
+                                            ->label('Sede IPS primaria')
+                                            ->maxLength(120),
+                                        Forms\Components\TextInput::make('tipo_portabilidad')
+                                            ->label('Tipo de portabilidad')
+                                            ->maxLength(40),
+                                    ])
+                                    ->columns(2),
 
-                    Forms\Components\Section::make('Clasificación socioeconómica')
-                        ->schema([
-                            Forms\Components\TextInput::make('grupo_poblacional')
-                                ->label('Grupo poblacional')
-                                ->maxLength(80),
-                            Forms\Components\TextInput::make('nivel_sisben')
-                                ->label('Nivel Sisbén')
-                                ->maxLength(20),
-                            Forms\Components\TextInput::make('puntaje_sisben')
-                                ->label('Puntaje Sisbén')
-                                ->maxLength(20),
-                            Forms\Components\TextInput::make('grupo_sisben')
-                                ->label('Grupo Sisbén')
-                                ->maxLength(20),
-                        ])
-                        ->columns(4)
-                        ->collapsible()
-                        ->collapsed(),
+                                Forms\Components\Fieldset::make('Núcleo familiar')
+                                    ->schema([
+                                        Forms\Components\Select::make('tipo_documento_cabeza_familia')
+                                            ->label('Tipo doc. cabeza de familia')
+                                            ->options(config('savia.tipos_documento')),
+                                        Forms\Components\TextInput::make('documento_cabeza_familia')
+                                            ->label('Documento cabeza de familia')
+                                            ->maxLength(20),
+                                        Forms\Components\TextInput::make('parentesco_cabeza_familia')
+                                            ->label('Parentesco')
+                                            ->maxLength(40),
+                                    ])
+                                    ->columns(3),
+                            ]),
 
-                    // El teléfono, la dirección, el barrio y la ciudad viven en
-                    // «Confirmar con el paciente»: son datos de SISPAM, no de Savia.
-                    Forms\Components\Section::make('Residencia según Savia')
-                        ->schema([
-                            Forms\Components\TextInput::make('comuna')
-                                ->label('Comuna')
-                                ->maxLength(80),
-                            Forms\Components\TextInput::make('municipio_afiliacion')
-                                ->label('Municipio de afiliación')
-                                ->maxLength(80),
-                            Forms\Components\TextInput::make('departamento_afiliacion')
-                                ->label('Departamento de afiliación')
-                                ->maxLength(80),
-                            Forms\Components\TextInput::make('email')
-                                ->label('Correo electrónico')
-                                ->email()
-                                ->maxLength(120),
-                        ])
-                        ->columns(3)
-                        ->collapsible()
-                        ->collapsed(),
+                        Forms\Components\Wizard\Step::make('Caracterización')
+                            ->description('Salud, Sisbén y programas')
+                            ->icon('heroicon-o-clipboard-document-list')
+                            ->schema([
+                                Forms\Components\Fieldset::make('Condición de salud')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('discapacidad')
+                                            ->label('Discapacidad')
+                                            ->maxLength(20),
+                                        Forms\Components\TextInput::make('tipo_discapacidad')
+                                            ->label('Tipo de discapacidad')
+                                            ->maxLength(60),
+                                        Forms\Components\TextInput::make('victima_ley_1448')
+                                            ->label('Víctima Ley 1448')
+                                            ->maxLength(20),
+                                    ])
+                                    ->columns(3),
 
-                    Forms\Components\Section::make('IPS y portabilidad')
-                        ->schema([
-                            Forms\Components\TextInput::make('codigo_ips')
-                                ->label('Código IPS')
-                                ->maxLength(20),
-                            Forms\Components\TextInput::make('ips_primaria')
-                                ->label('IPS primaria')
-                                ->maxLength(120),
-                            Forms\Components\TextInput::make('sede_ips_primaria')
-                                ->label('Sede IPS primaria')
-                                ->maxLength(120),
-                            Forms\Components\TextInput::make('tipo_portabilidad')
-                                ->label('Tipo de portabilidad')
-                                ->maxLength(40),
-                        ])
-                        ->columns(2)
-                        ->collapsible()
-                        ->collapsed(),
+                                Forms\Components\Fieldset::make('Clasificación socioeconómica')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('grupo_poblacional')
+                                            ->label('Grupo poblacional')
+                                            ->maxLength(80),
+                                        Forms\Components\TextInput::make('nivel_sisben')
+                                            ->label('Nivel Sisbén')
+                                            ->maxLength(20),
+                                        Forms\Components\TextInput::make('puntaje_sisben')
+                                            ->label('Puntaje Sisbén')
+                                            ->maxLength(20),
+                                        Forms\Components\TextInput::make('grupo_sisben')
+                                            ->label('Grupo Sisbén')
+                                            ->maxLength(20),
+                                    ])
+                                    ->columns(4),
 
-                    Forms\Components\Section::make('Programas especiales y RIAS')
-                        ->schema([
-                            Forms\Components\Repeater::make('programas')
-                                ->hiddenLabel()
-                                ->schema([
-                                    Forms\Components\TextInput::make('tipo')
-                                        ->label('Tipo'),
-                                    Forms\Components\TextInput::make('descripcion')
-                                        ->label('Descripción'),
-                                ])
-                                ->columns(2)
-                                ->addable(false)
-                                ->deletable(false)
-                                ->reorderable(false)
-                                // Los programas los define Savia, aquí solo se muestran y se guardan.
-                                ->disabled()
-                                ->dehydrated()
-                                ->default([]),
-                        ])
-                        ->collapsible()
-                        ->visible(fn (Forms\Get $get): bool => filled($get('programas'))),
+                                Forms\Components\Section::make('Programas especiales y RIAS')
+                                    ->schema([
+                                        Forms\Components\Repeater::make('programas')
+                                            ->hiddenLabel()
+                                            ->schema([
+                                                Forms\Components\TextInput::make('tipo')
+                                                    ->label('Tipo'),
+                                                Forms\Components\TextInput::make('descripcion')
+                                                    ->label('Descripción'),
+                                            ])
+                                            ->columns(2)
+                                            ->addable(false)
+                                            ->deletable(false)
+                                            ->reorderable(false)
+                                            // Los programas los define Savia, aquí solo se muestran y se guardan.
+                                            ->disabled()
+                                            ->dehydrated()
+                                            ->default([]),
+                                    ])
+                                    ->collapsible()
+                                    ->visible(fn (Forms\Get $get): bool => filled($get('programas'))),
 
-                    Forms\Components\Section::make('Otros datos de Savia')
-                        ->description('Campos que devuelve el servicio y no tienen columna propia, incluidos los que la especificación V3 no documenta.')
-                        ->schema([
-                            Forms\Components\KeyValue::make('datos_adicionales')
-                                ->hiddenLabel()
-                                ->keyLabel('Campo')
-                                ->valueLabel('Valor')
-                                ->disabled()
-                                ->dehydrated()
-                                ->default([]),
-                        ])
-                        ->collapsible()
-                        ->collapsed()
-                        ->visible(fn (Forms\Get $get): bool => filled($get('datos_adicionales'))),
+                                Forms\Components\Section::make('Otros datos de Savia')
+                                    ->description('Campos que devuelve el servicio y no tienen columna propia, incluidos los que la especificación V3 no documenta.')
+                                    ->schema([
+                                        Forms\Components\KeyValue::make('datos_adicionales')
+                                            ->hiddenLabel()
+                                            ->keyLabel('Campo')
+                                            ->valueLabel('Valor')
+                                            ->disabled()
+                                            ->dehydrated()
+                                            ->default([]),
+                                    ])
+                                    ->collapsible()
+                                    ->collapsed()
+                                    ->visible(fn (Forms\Get $get): bool => filled($get('datos_adicionales'))),
 
-                    Forms\Components\Section::make('Observación')
-                        ->schema([
-                            Forms\Components\Textarea::make('observacion')
-                                ->hiddenLabel()
-                                ->rows(3),
-                        ])
-                        ->collapsible()
-                        ->collapsed(),
+                                Forms\Components\Textarea::make('observacion')
+                                    ->label('Observación')
+                                    ->rows(3),
+                            ]),
+
+                        // Toma de datos del orientador. Cada carga queda como un soporte del
+                        // paciente (ver `guardarSoporte`); el ticket se genera más adelante.
+                        Forms\Components\Wizard\Step::make('Orientación')
+                            ->description('Orden médica y alto costo')
+                            ->icon('heroicon-o-document-arrow-up')
+                            ->schema([
+                                Forms\Components\Radio::make('alto_costo_oncologico')
+                                    ->label('¿Paciente o medicamento de alto costo / oncológico?')
+                                    ->boolean('Sí', 'No')
+                                    ->inline()
+                                    ->required(),
+                                // Sin `capture`: en el celular el mismo botón ofrece la cámara
+                                // o los archivos del dispositivo.
+                                Forms\Components\FileUpload::make('orden_medica')
+                                    ->label('Orden médica')
+                                    ->helperText('Toma una foto con la cámara o carga la imagen o el PDF desde el dispositivo. Máximo 10 MB.')
+                                    ->disk('local')
+                                    ->directory('soportes/ordenes-medicas')
+                                    ->visibility('private')
+                                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+                                    ->maxSize(10240)
+                                    // Al registrar la atención es obligatoria; al editar solo se
+                                    // carga si hay una orden nueva.
+                                    ->required(fn (string $operation): bool => $operation === 'create')
+                                    ->columnSpanFull(),
+                            ])
+                            ->visible(fn (): bool => (bool) auth()->user()?->puede('orientacion.usar')),
+                    ])
+                        // Guardar solo aparece en el último paso y cada «Siguiente» valida los
+                        // obligatorios del paso. La vista se pinta al renderizar, así los botones
+                        // de la página se evalúan después de la consulta a Savia.
+                        ->submitAction(view('filament.pacientes.acciones-guardado', ['livewire' => $form->getLivewire()]))
+                        // Al editar los datos ya son válidos: se puede saltar a cualquier paso.
+                        ->skippable(fn (string $operation): bool => $operation === 'edit'),
 
                     // Trazabilidad de la última consulta; los llena el botón, no el usuario.
                     Forms\Components\Hidden::make('codigo_respuesta_savia'),
@@ -882,6 +922,25 @@ class PacienteResource extends Resource
      *  Control de la consulta: los datos mostrados siempre corresponden
      *  al documento que está escrito en el formulario.
      * ------------------------------------------------------------------ */
+
+    /**
+     * Saca del formulario la toma de datos del orientador (no son columnas del
+     * paciente) y la devuelve lista para crear el soporte, o null si no hay orden.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function separarSoporte(array &$data): ?array
+    {
+        $orden = $data['orden_medica'] ?? null;
+        $altoCosto = (bool) ($data['alto_costo_oncologico'] ?? false);
+        unset($data['orden_medica'], $data['alto_costo_oncologico']);
+
+        return blank($orden) ? null : [
+            'orden_medica' => $orden,
+            'alto_costo_oncologico' => $altoCosto,
+            'cargado_por' => auth()->id(),
+        ];
+    }
 
     /**
      * Marca con la que se identifica de qué documento son los datos cargados.

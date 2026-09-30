@@ -23,7 +23,7 @@ class UserResourceTest extends TestCase
     {
         parent::setUp();
 
-        $this->admin = User::factory()->create();
+        $this->admin = User::factory()->administrador()->create();
         $this->actingAs($this->admin);
     }
 
