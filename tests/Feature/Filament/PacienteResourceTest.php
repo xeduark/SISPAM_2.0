@@ -7,11 +7,14 @@ use App\Filament\Resources\PacienteResource\Pages\EditPaciente;
 use App\Filament\Resources\PacienteResource\Pages\ListPacientes;
 use App\Filament\Resources\PacienteResource\Pages\ViewPaciente;
 use App\Models\Paciente;
+use App\Models\Rol;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -43,7 +46,11 @@ class PacienteResourceTest extends TestCase
             'savia.auditar' => false,
         ]);
 
-        $this->admin = User::factory()->create();
+        // Personal de farmacia: todo el módulo Pacientes, sin la toma de datos del orientador.
+        Rol::create(['nombre' => 'PERSONAL', 'permisos' => ['pacientes' => ['ver', 'crear', 'editar', 'eliminar']]]);
+        Rol::create(['nombre' => 'ORIENTADOR', 'permisos' => ['orientacion' => ['usar']]]);
+
+        $this->admin = User::factory()->create(['roles' => ['PERSONAL']]);
         $this->actingAs($this->admin);
     }
 
@@ -127,6 +134,74 @@ class PacienteResourceTest extends TestCase
     private function consultar(string $numero = '1017234567', string $tipo = 'CC'): Testable
     {
         return $this->pulsarConsultar($this->crearPagina($numero, $tipo));
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Asistente por pasos
+     * ------------------------------------------------------------------ */
+
+    public function test_el_paso_de_contacto_no_deja_avanzar_sin_los_obligatorios(): void
+    {
+        $this->fakeConsultaExitosa();
+
+        $pagina = $this->consultar()->fillForm(['telefono_movil' => null]);
+
+        // Paso 1 (Identificación) viene completo desde Savia: avanza sin errores.
+        $pagina->call('dispatchFormEvent', 'wizard::nextStep', 'data', 0)
+            ->assertHasNoFormErrors();
+
+        // Paso 2 (Ubicación y contacto) exige teléfono y la confirmación.
+        $pagina->call('dispatchFormEvent', 'wizard::nextStep', 'data', 1)
+            ->assertHasFormErrors(['telefono_movil' => 'required', 'contacto_confirmado' => 'accepted']);
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Orientación: orden médica y alto costo (rol ORIENTADOR)
+     * ------------------------------------------------------------------ */
+
+    public function test_sin_rol_orientador_no_aparece_el_paso_de_orientacion(): void
+    {
+        $this->fakeConsultaExitosa();
+
+        $this->confirmarContacto($this->consultar())
+            ->assertDontSee('Orden médica')
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(0, Paciente::first()->soportes()->count());
+    }
+
+    public function test_el_orientador_debe_cargar_la_orden_medica_y_responder_alto_costo(): void
+    {
+        $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
+        $this->fakeConsultaExitosa();
+
+        $this->confirmarContacto($this->consultar())
+            ->assertSee('Orden médica')
+            ->call('create')
+            ->assertHasFormErrors(['orden_medica' => 'required', 'alto_costo_oncologico' => 'required']);
+
+        $this->assertDatabaseCount('pacientes', 0);
+    }
+
+    public function test_la_orden_medica_queda_como_soporte_del_paciente(): void
+    {
+        Storage::fake('local');
+        $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
+        $this->fakeConsultaExitosa();
+
+        $this->confirmarContacto($this->consultar(), [
+            'alto_costo_oncologico' => true,
+            'orden_medica' => UploadedFile::fake()->image('orden.jpg'),
+        ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $soporte = Paciente::first()->soportes()->sole();
+
+        $this->assertTrue($soporte->alto_costo_oncologico);
+        $this->assertSame($this->admin->id, $soporte->cargado_por);
+        Storage::disk('local')->assertExists($soporte->orden_medica);
     }
 
     /* ------------------------------------------------------------------ *

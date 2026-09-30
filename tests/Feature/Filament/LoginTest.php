@@ -31,12 +31,13 @@ class LoginTest extends TestCase
     /**
      * Simula la respuesta de Authentik en el callback.
      */
-    private function authentikDevuelve(?string $preferredUsername): void
+    private function authentikDevuelve(?string $preferredUsername, array $grupos = []): void
     {
         $socialiteUser = (new SocialiteUser)->setRaw([
             'sub' => 'abc123',
             'preferred_username' => $preferredUsername,
             'email' => 'persona@example.com',
+            'groups' => $grupos,
         ]);
 
         $provider = Mockery::mock(AuthentikProvider::class);
@@ -83,6 +84,16 @@ class LoginTest extends TestCase
         $this->get(route('auth.authentik.callback'))->assertRedirect('/admin');
 
         $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_los_roles_se_toman_de_los_grupos_de_authentik_en_cada_ingreso(): void
+    {
+        $user = User::factory()->create(['documento' => '1000000000', 'roles' => ['VIEJO']]);
+        $this->authentikDevuelve('1000000000', ['ORIENTADOR']);
+
+        $this->get(route('auth.authentik.callback'))->assertRedirect('/admin');
+
+        $this->assertSame(['ORIENTADOR'], $user->fresh()->roles);
     }
 
     public function test_un_usuario_que_no_existe_en_sispam_es_rechazado(): void

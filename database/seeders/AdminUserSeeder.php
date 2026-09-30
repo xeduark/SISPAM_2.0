@@ -22,6 +22,7 @@ class AdminUserSeeder extends Seeder
                 'email' => 'admin@sispam.com',
                 'sede_id' => Sede::where('nombre', 'Sede Principal')->value('id'),
                 'activo' => true,
+                'es_administrador' => true,
             ],
         );
     }

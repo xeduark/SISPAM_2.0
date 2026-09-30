@@ -51,6 +51,10 @@ class AuthentikController extends Controller
             return $this->rechazar('Tu usuario está inactivo. Comunícate con un administrador.');
         }
 
+        // Los roles se administran en Authentik: se toman sus grupos en cada ingreso,
+        // así quitar a alguien de un grupo le quita el rol la próxima vez que entre.
+        $user->update(['roles' => array_values((array) ($datos['groups'] ?? []))]);
+
         $panel->auth()->login($user);
         session()->regenerate();
 

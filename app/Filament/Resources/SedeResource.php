@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\ControlaPermisos;
 use App\Filament\Resources\SedeResource\Pages;
 use App\Models\Sede;
 use Filament\Actions\MountableAction;
@@ -15,6 +16,10 @@ use Illuminate\Database\Eloquent\Collection;
 
 class SedeResource extends Resource
 {
+    use ControlaPermisos;
+
+    protected static string $modulo = 'sedes';
+
     protected static ?string $model = Sede::class;
 
     protected static ?string $modelLabel = 'Sede';

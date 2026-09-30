@@ -21,7 +21,7 @@ class SedeResourceTest extends TestCase
     {
         parent::setUp();
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->administrador()->create());
     }
 
     public function test_crea_una_sede(): void

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\ControlaPermisos;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use Filament\Forms;
@@ -16,6 +17,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class UserResource extends Resource
 {
+    use ControlaPermisos;
+
+    protected static string $modulo = 'usuarios';
+
     protected static ?string $model = User::class;
 
     protected static ?string $modelLabel = 'Usuario';
@@ -60,6 +65,16 @@ class UserResource extends Resource
                 Forms\Components\Toggle::make('activo')
                     ->label('Usuario activo')
                     ->default(true),
+                // Solo un administrador puede nombrar a otro: si no, quien tenga el
+                // módulo Usuarios podría darse todos los permisos.
+                Forms\Components\Toggle::make('es_administrador')
+                    ->label('Administrador')
+                    ->helperText('Ve todos los módulos y administra la matriz de permisos.')
+                    ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
+                Forms\Components\Placeholder::make('roles')
+                    ->label('Roles (grupos en Authentik)')
+                    ->content(fn (?User $record): string => implode(', ', $record?->roles ?? []) ?: 'Se toman de Authentik al iniciar sesión.')
+                    ->hiddenOn('create'),
             ]);
     }
 
@@ -82,6 +97,11 @@ class UserResource extends Resource
                     ->sortable(),
                 Tables\Columns\IconColumn::make('activo')
                     ->boolean(),
+                Tables\Columns\TextColumn::make('roles')
+                    ->label('Roles')
+                    ->badge()
+                    ->placeholder('—')
+                    ->description(fn (User $record): ?string => $record->es_administrador ? 'Administrador' : null),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->dateTime('d/m/Y')

@@ -6,6 +6,7 @@ use App\Filament\Resources\PacienteResource;
 use App\Models\Paciente;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Database\Eloquent\Model;
 
 class EditPaciente extends EditRecord
 {
@@ -21,6 +22,38 @@ class EditPaciente extends EditRecord
         $data['contacto_confirmado_por'] = auth()->id();
 
         return $data;
+    }
+
+    /**
+     * Si el orientador cargó una orden nueva, queda como otro soporte del paciente.
+     */
+    protected function handleRecordUpdate(Model $record, array $data): Model
+    {
+        $soporte = PacienteResource::separarSoporte($data);
+
+        $record->update($data);
+
+        if ($soporte !== null) {
+            $record->soportes()->create($soporte);
+        }
+
+        return $record;
+    }
+
+    /**
+     * «Guardar» va en el último paso del asistente; abajo solo queda «Cancelar».
+     */
+    protected function getFormActions(): array
+    {
+        return [$this->getCancelFormAction()];
+    }
+
+    /**
+     * @return array<Actions\Action>
+     */
+    public function accionesDeGuardado(): array
+    {
+        return [$this->getSaveFormAction()->livewire($this)];
     }
 
     protected function getHeaderActions(): array

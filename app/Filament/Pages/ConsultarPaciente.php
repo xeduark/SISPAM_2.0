@@ -31,6 +31,11 @@ class ConsultarPaciente extends Page implements HasForms
 
     protected static string $view = 'filament.pages.consultar-paciente';
 
+    public static function canAccess(): bool
+    {
+        return (bool) auth()->user()?->puede('consultar_paciente.ver');
+    }
+
     /** @var array<string, mixed> */
     public array $datos = [];
 

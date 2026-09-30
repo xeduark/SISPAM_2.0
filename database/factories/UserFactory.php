@@ -31,6 +31,16 @@ class UserFactory extends Factory
     }
 
     /**
+     * Administrador: ve todos los módulos y administra la matriz de permisos.
+     */
+    public function administrador(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'es_administrador' => true,
+        ]);
+    }
+
+    /**
      * Indica que el usuario está inactivo (no puede ingresar al panel).
      */
     public function inactivo(): static

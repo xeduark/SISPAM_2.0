@@ -6,6 +6,7 @@ use Database\Factories\PacienteFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Log;
 
 class Paciente extends Model
@@ -237,6 +238,16 @@ class Paciente extends Model
     public function contactoConfirmadoPor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'contacto_confirmado_por');
+    }
+
+    /**
+     * Órdenes médicas cargadas por el orientador, una por cada atención.
+     *
+     * @return HasMany<Soporte, $this>
+     */
+    public function soportes(): HasMany
+    {
+        return $this->hasMany(Soporte::class);
     }
 
     public function tieneContactoConfirmado(): bool

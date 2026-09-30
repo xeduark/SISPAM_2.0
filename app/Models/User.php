@@ -28,7 +28,12 @@ class User extends Authenticatable implements FilamentUser, HasName
         'email',
         'sede_id',
         'activo',
+        'roles',
+        'es_administrador',
     ];
+
+    /** Permisos de la matriz ya resueltos, para no consultarlos en cada verificación. */
+    private ?array $permisosResueltos = null;
 
     /**
      * The attributes that should be hidden for serialization.
@@ -49,7 +54,28 @@ class User extends Authenticatable implements FilamentUser, HasName
     {
         return [
             'activo' => 'boolean',
+            'roles' => 'array',
+            'es_administrador' => 'boolean',
         ];
+    }
+
+    /**
+     * Si la matriz de permisos le deja hacer `modulo.accion` (p. ej. «pacientes.crear»).
+     * Los roles son los grupos de Authentik; el administrador puede todo.
+     */
+    public function puede(string $permiso): bool
+    {
+        if ($this->es_administrador) {
+            return true;
+        }
+
+        [$modulo, $accion] = explode('.', $permiso, 2) + [1 => null];
+
+        $this->permisosResueltos ??= Rol::whereIn('nombre', $this->roles ?? [])
+            ->pluck('permisos')
+            ->reduce(fn (array $todos, ?array $permisos): array => array_merge_recursive($todos, $permisos ?? []), []);
+
+        return in_array($accion, $this->permisosResueltos[$modulo] ?? [], true);
     }
 
     /**

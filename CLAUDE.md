@@ -118,6 +118,13 @@ php artisan test --filter=PacienteResourceTest   # el registro local
 Ninguna toca el servicio real. Para una consulta real contra el ambiente de pruebas
 hace falta que la IP del equipo esté autorizada por Savia.
 
+## Roles y permisos
+- Roles = grupos de Authentik (claim `groups`), copiados a `users.roles` en cada login.
+- Matriz por módulo en la tabla `roles` (Administración → Roles y permisos); módulos en `Rol::MODULOS`.
+- `users.es_administrador` (se marca en SISPAM) ve todo y es el único que edita la matriz.
+- Verificar: `auth()->user()->puede('modulo.accion')`; recursos usan el trait `ControlaPermisos` + `$modulo`.
+- Detalle: `docs/asistente-orientacion-y-permisos.md`.
+
 ## Acceso local
 - URL: http://localhost:8000/admin
 - Usuario administrador sembrado: documento `AdminSispam` (debe existir con ese username en Authentik; la contraseña se gestiona allá)
