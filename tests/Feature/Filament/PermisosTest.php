@@ -54,7 +54,7 @@ class PermisosTest extends TestCase
     {
         $this->actingAs(User::factory()->administrador()->create());
 
-        foreach (['pacientes', 'pacientes/create', 'consultar-paciente', 'sedes', 'users', 'roles'] as $ruta) {
+        foreach (['pacientes', 'pacientes/create', 'consultar-paciente', 'sedes', 'users', 'roles', 'atender-entrega', 'entregas', 'domicilio-envios', 'reporte-entregas'] as $ruta) {
             $this->get("/admin/{$ruta}")->assertOk();
         }
     }

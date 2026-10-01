@@ -36,6 +36,15 @@ class Rol extends Model
             'nombre' => 'Usuarios',
             'acciones' => ['ver' => 'Ver', 'crear' => 'Crear', 'editar' => 'Editar', 'eliminar' => 'Eliminar'],
         ],
+        'entrega' => [
+            'nombre' => 'Entrega',
+            'acciones' => [
+                'ver' => 'Ver',
+                'atender' => 'Atender',
+                'domicilio' => 'Gestionar domicilio',
+                'reportes' => 'Reportes',
+            ],
+        ],
     ];
 
     /**

@@ -250,6 +250,16 @@ class Paciente extends Model
         return $this->hasMany(Soporte::class);
     }
 
+    /**
+     * Entregas de medicamentos registradas para este paciente.
+     *
+     * @return HasMany<Entrega, $this>
+     */
+    public function entregas(): HasMany
+    {
+        return $this->hasMany(Entrega::class);
+    }
+
     public function tieneContactoConfirmado(): bool
     {
         return $this->contacto_confirmado_at !== null;

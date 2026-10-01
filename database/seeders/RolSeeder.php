@@ -20,5 +20,12 @@ class RolSeeder extends Seeder
                 'orientacion' => ['usar'],
             ],
         ]);
+
+        Rol::firstOrCreate(['nombre' => 'DISPENSADOR'], [
+            'permisos' => [
+                'entrega' => ['ver', 'atender', 'domicilio', 'reportes'],
+                'pacientes' => ['ver'],
+            ],
+        ]);
     }
 }
