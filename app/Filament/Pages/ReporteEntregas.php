@@ -56,7 +56,7 @@ class ReporteEntregas extends Page implements HasForms
                 Forms\Components\DatePicker::make('desde')->label('Desde')->required(),
                 Forms\Components\DatePicker::make('hasta')->label('Hasta')->required(),
                 Forms\Components\Select::make('sede_id')
-                    ->label('Sede')
+                    ->label('Sede de atención')
                     ->options(Sede::query()->orderBy('nombre')->pluck('nombre', 'id'))
                     ->searchable()
                     ->placeholder('Todas'),
@@ -76,7 +76,7 @@ class ReporteEntregas extends Page implements HasForms
                     ])
                     ->placeholder('Todos'),
                 Forms\Components\Toggle::make('solo_faltantes_pendientes')
-                    ->label('Solo con faltantes o pendientes'),
+                    ->label('Solo con cantidades pendientes'),
             ])
             ->columns(3)
             ->statePath('filtros');
@@ -85,37 +85,47 @@ class ReporteEntregas extends Page implements HasForms
     public function consultar(): void
     {
         $this->form->validate();
-        $this->resultados = $this->consulta()->with(['paciente', 'sede', 'items'])->get();
+        $this->resultados = $this->consulta()
+            ->with(['paciente', 'sede', 'usuario', 'items', 'domicilioEnvio'])
+            ->get();
     }
 
     public function exportarCsv(): StreamedResponse
     {
         $this->form->validate();
-        $filas = $this->consulta()->with(['paciente', 'sede', 'items'])->get();
+        $filas = $this->consulta()
+            ->with(['paciente', 'sede', 'usuario', 'items', 'domicilioEnvio'])
+            ->get();
 
         return response()->streamDownload(function () use ($filas): void {
             $out = fopen('php://output', 'w');
             fputcsv($out, [
-                'id', 'ticket', 'tipo', 'estado', 'sede', 'paciente', 'fecha',
-                'codigo', 'medicamento', 'solicitada', 'entregada', 'resultado', 'motivo',
+                'entrega_id', 'ticket', 'paciente', 'documento', 'fecha', 'sede_atencion', 'tipo',
+                'codigo', 'medicamento', 'solicitada', 'entregada', 'pendiente', 'motivo',
+                'resultado_item', 'estado_entrega', 'usuario_dispensador', 'estado_domicilio',
             ]);
 
             foreach ($filas as $entrega) {
+                $documento = trim(($entrega->paciente?->tipo_documento ?? '').' '.($entrega->paciente?->numero_documento ?? ''));
                 foreach ($entrega->items as $item) {
                     fputcsv($out, [
                         $entrega->id,
                         $entrega->ticket_numero,
-                        $entrega->tipo,
-                        $entrega->estado,
-                        $entrega->sede?->nombre,
                         $entrega->paciente?->nombre_completo,
+                        $documento,
                         $entrega->created_at?->format('Y-m-d H:i'),
+                        $entrega->sede?->nombre,
+                        $entrega->tipo,
                         $item->codigo,
                         $item->nombre,
                         $item->cantidad_solicitada,
                         $item->cantidad_entregada,
-                        $item->resultado,
+                        $item->cantidad_pendiente,
                         $item->motivo,
+                        $item->resultado,
+                        $entrega->estado,
+                        $entrega->usuario?->nombre_completo,
+                        $entrega->domicilioEnvio?->estado,
                     ]);
                 }
             }
@@ -139,10 +149,7 @@ class ReporteEntregas extends Page implements HasForms
             ->when($f['estado'] ?? null, fn (Builder $q, $estado) => $q->where('estado', $estado))
             ->when(! empty($f['solo_faltantes_pendientes']), fn (Builder $q) => $q->whereHas(
                 'items',
-                fn (Builder $iq) => $iq->whereIn('resultado', [
-                    EntregaItem::RESULTADO_FALTANTE,
-                    EntregaItem::RESULTADO_PENDIENTE,
-                ])
+                fn (Builder $iq) => $iq->where('cantidad_pendiente', '>', 0)
             ))
             ->latest('id');
     }

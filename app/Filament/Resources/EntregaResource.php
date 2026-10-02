@@ -75,7 +75,7 @@ class EntregaResource extends Resource
                 Infolists\Components\TextEntry::make('ticket_numero')->label('Ticket'),
                 Infolists\Components\TextEntry::make('tipo')->badge(),
                 Infolists\Components\TextEntry::make('estado')->badge(),
-                Infolists\Components\TextEntry::make('sede.nombre')->label('Sede'),
+                Infolists\Components\TextEntry::make('sede.nombre')->label('Sede de atención'),
                 Infolists\Components\TextEntry::make('usuario.nombre_completo')->label('Atendido por'),
                 Infolists\Components\TextEntry::make('created_at')->label('Fecha')->dateTime('d/m/Y H:i'),
             ])->columns(3),
@@ -96,7 +96,10 @@ class EntregaResource extends Resource
                     Infolists\Components\TextEntry::make('nombre'),
                     Infolists\Components\TextEntry::make('cantidad_solicitada')->label('Solicitada'),
                     Infolists\Components\TextEntry::make('cantidad_entregada')->label('Entregada'),
-                    Infolists\Components\TextEntry::make('resultado')->badge(),
+                    Infolists\Components\TextEntry::make('cantidad_pendiente')->label('Pendiente'),
+                    Infolists\Components\TextEntry::make('resultado')
+                        ->badge()
+                        ->formatStateUsing(fn (string $state): string => EntregaItem::resultados()[$state] ?? $state),
                     Infolists\Components\TextEntry::make('motivo')->placeholder('—'),
                 ])->columns(3),
             ]),
@@ -108,12 +111,27 @@ class EntregaResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('ticket_numero')->label('Ticket')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('tipo')->badge()->sortable(),
-                Tables\Columns\TextColumn::make('estado')->badge()->sortable(),
-                Tables\Columns\TextColumn::make('paciente.nombre_completo')->label('Paciente')->searchable()->toggleable(),
-                Tables\Columns\TextColumn::make('sede.nombre')->label('Sede')->toggleable(),
-                Tables\Columns\TextColumn::make('facturacion_estado')->label('Facturación')->badge()->toggleable(),
+                Tables\Columns\TextColumn::make('paciente.nombre_completo')->label('Paciente')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('sede.nombre')
+                    ->label('Sede de atención')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('tipo')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => $state === Entrega::TIPO_DOMICILIO ? 'Domicilio' : 'Presencial')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('created_at')->label('Fecha')->dateTime('d/m/Y H:i')->sortable(),
+                Tables\Columns\TextColumn::make('estado')->badge()->sortable(),
+                Tables\Columns\TextColumn::make('items_count')
+                    ->counts('items')
+                    ->label('Medicamentos'),
+                Tables\Columns\IconColumn::make('tiene_pendientes')
+                    ->label('Pendientes')
+                    ->boolean()
+                    ->getStateUsing(fn (Entrega $record): bool => $record->items()
+                        ->where('cantidad_pendiente', '>', 0)
+                        ->exists()),
+                Tables\Columns\TextColumn::make('usuario.nombre_completo')->label('Atendido por')->toggleable(),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
@@ -127,18 +145,15 @@ class EntregaResource extends Resource
                     Entrega::ESTADO_COMPLETADA => 'Completada',
                     Entrega::ESTADO_ANULADA => 'Anulada',
                 ]),
-                Tables\Filters\Filter::make('faltantes_pendientes')
-                    ->label('Con faltantes o pendientes')
+                Tables\Filters\Filter::make('con_pendientes')
+                    ->label('Con cantidades pendientes')
                     ->query(fn (Builder $query): Builder => $query->whereHas(
                         'items',
-                        fn (Builder $q) => $q->whereIn('resultado', [
-                            EntregaItem::RESULTADO_FALTANTE,
-                            EntregaItem::RESULTADO_PENDIENTE,
-                        ])
+                        fn (Builder $q) => $q->where('cantidad_pendiente', '>', 0)
                     )),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                Tables\Actions\ViewAction::make()->label('Ver detalle'),
                 Tables\Actions\EditAction::make()->label('Facturación'),
             ]);
     }

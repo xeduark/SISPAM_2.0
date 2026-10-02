@@ -88,10 +88,10 @@ class Entrega extends Model
 
     public function esParcial(): bool
     {
-        return $this->items()->whereIn('resultado', [
-            EntregaItem::RESULTADO_FALTANTE,
-            EntregaItem::RESULTADO_PENDIENTE,
-        ])->exists();
+        // Cualquier ítem con cantidad aún por entregar deja la entrega parcial.
+        return $this->items()
+            ->whereColumn('cantidad_entregada', '<', 'cantidad_solicitada')
+            ->exists();
     }
 
     public function recalcularEstado(): void
