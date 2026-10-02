@@ -190,6 +190,21 @@ class AtenderEntrega extends Page implements HasForms
             return;
         }
 
+        // El ticket es de otra sede: no se atiende aquí. El contrato expone
+        // `sedeId` justamente para esto.
+        $usuario = auth()->user();
+
+        if (! $usuario->es_administrador && $dto->sedeId !== (int) $usuario->sede_id) {
+            $this->ticket = null;
+            Notification::make()
+                ->title('Ticket de otra sede')
+                ->body('Ese ticket pertenece a otra sede y no se puede atender desde aquí.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         if (! $dto->listoParaEntrega()) {
             $this->ticket = null;
             Notification::make()

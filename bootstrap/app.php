@@ -11,7 +11,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Aquí no hay ruta «login»: el inicio de sesión es el del panel, que
+        // redirige a Authentik. Sin esto, cualquier ruta con middleware `auth`
+        // responde 500 en vez de mandar al login.
+        $middleware->redirectGuestsTo(fn () => route('filament.admin.auth.login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

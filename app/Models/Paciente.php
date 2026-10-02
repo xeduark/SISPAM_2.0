@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Database\Factories\PacienteFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,29 @@ use Illuminate\Support\Facades\Log;
 class Paciente extends Model
 {
     /** @use HasFactory<PacienteFactory> */
-    use HasFactory;
+    use Auditable, HasFactory;
+
+    /**
+     * Lo que se audita del paciente.
+     *
+     * A propósito NO están los nombres, la fecha de nacimiento, los programas
+     * ni nada clínico: la auditoría dice QUÉ pasó y A QUIÉN (por su documento),
+     * no vuelve a contar la historia del paciente. El estado de afiliación, el
+     * régimen y el contacto sí, porque de ellos depende si se dispensa y a
+     * dónde se envía.
+     */
+    public const CAMPOS_AUDITADOS = [
+        'estado_afiliacion',
+        'regimen',
+        'tipo_afiliado',
+        'ips_primaria',
+        'telefono_movil',
+        'direccion',
+        'ciudad_residencia',
+        'contacto_confirmado_at',
+    ];
+
+    public const ETIQUETA_AUDITORIA = 'paciente';
 
     /**
      * Nombre del atributo de Savia => columna de la tabla.
@@ -251,6 +274,16 @@ class Paciente extends Model
     }
 
     /**
+     * Tickets de las visitas del paciente.
+     *
+     * @return HasMany<Ticket, $this>
+     */
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class);
+    }
+
+    /**
      * Entregas de medicamentos registradas para este paciente.
      *
      * @return HasMany<Entrega, $this>
@@ -278,6 +311,14 @@ class Paciente extends Model
     public function getDocumentoCompletoAttribute(): string
     {
         return trim("{$this->tipo_documento} {$this->numero_documento}");
+    }
+
+    /**
+     * Solo el documento: el nombre del paciente no va a la auditoría.
+     */
+    public function descripcionParaAuditoria(): string
+    {
+        return "el paciente {$this->documento_completo}";
     }
 
     /**

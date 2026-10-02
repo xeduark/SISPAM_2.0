@@ -125,6 +125,90 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - Verificar: `auth()->user()->puede('modulo.accion')`; recursos usan el trait `ControlaPermisos` + `$modulo`.
 - Detalle: `docs/asistente-orientacion-y-permisos.md`.
 
+## Auditoría
+- Rastro de quién hizo qué **en base de datos** (tabla `auditorias`), no solo en los logs.
+  Se ve en **Administración → Auditoría**; módulo `auditoria` de la matriz (solo `ver`).
+- **Lista blanca por modelo:** cada modelo auditado declara `CAMPOS_AUDITADOS`.
+  **Lo que no esté ahí no se registra**, para que un campo clínico nuevo no entre por olvido.
+  Mismo principio que `Paciente::CAMPOS_SAVIA`.
+- Del paciente solo queda **su documento**, nunca su nombre ni nada clínico.
+  De la orden médica solo queda que se cargó: ni la ruta del archivo ni la marca de alto costo.
+- Auditar un modelo: `use Auditable;` + `CAMPOS_AUDITADOS` + `ETIQUETA_AUDITORIA`.
+  Registrar algo que no es un cambio de modelo: `Auditoria::registrar(...)`.
+- Nadie crea, edita ni borra auditorías desde la pantalla, ni el administrador.
+- **Orden médica:** `soportes/{soporte}/orden-medica` sirve el archivo desde el disco
+  privado. Exige sesión y el permiso `orientacion.ver_orden`; cada acceso se audita.
+  Se llega desde la sección «Órdenes médicas» de la ficha del paciente.
+  Nunca hay URL pública para un dato de salud.
+- Detalle: `docs/auditoria.md`.
+
+## Sedes
+- Sedes reales: **La 30, Premium Plaza, BIC, Centro Comercial Aventura**. La 7 entra después.
+- «Sede Principal» se conserva como sede administrativa.
+- Se siembran con `php artisan db:seed --class=SedeSeeder` (usa `updateOrCreate`, se puede repetir).
+- Un usuario pertenece a **una sola** sede (`users.sede_id`).
+## Tickets
+- El ticket **es la visita del paciente**. Nace cuando el orientador lo registra con su
+  orden médica (`GeneraTicketDeLaVisita` en Create/EditPaciente) y lleva dos identificadores:
+  - `numero` (`SP-LA30-20261003-A023`) **único en todo el sistema** — es lo que busca entrega.
+  - `turno` (`A-023`) corto, por sede y día — es lo que ve el paciente.
+  El número lleva sede y fecha, así que el mismo turno puede existir en dos sedes
+  el mismo día. Por eso **el contrato con entrega no cambia**.
+- **Nace sin medicamentos**, en estado `generado`: los captura farmacia al alistar.
+  `listo` y `parcial` son los dos estados que el módulo de entrega atiende.
+- La cola la decide `colas.atiende_alto_costo`, no el prefijo: se reconfigura por sede.
+- **Si la sede no tiene colas, el paciente igual queda registrado** con su orden médica
+  y se avisa: perder la orientación por un problema de configuración es peor.
+- Prioridad `normal` o `preferencial`; se **sugiere** por edad (≥60) y discapacidad
+  según Savia, pero el orientador decide. Los preferenciales se llaman de primeras.
+- Pantalla **Tickets** con pestañas Por alistar / Listos / Todos, filtrada por sede.
+  No se crea ni se edita desde ahí. Módulo `tickets` (ver, alistar, anular).
+- **Conexión con entrega:** `TicketConsultaDb` reemplazó al mock, así que Atender entrega
+  lee tickets reales. Se puede buscar por número o por el turno corto del día en la sede.
+  Al registrar la atención, el ticket queda `entregado` o `parcial` por el puerto
+  `TicketCierreInterface`, disparado desde `SincronizarEstadoDelTicket` al guardarse una
+  `Entrega`: **no se tocó el código del módulo de entrega**, solo se le agregó la
+  validación de sede que el contrato ya pedía.
+- Detalle: `docs/tickets.md` y `docs/contrato-ticket-entrega.md`.
+## Colas, ventanillas y turnos
+- **Colas por sede** con un prefijo (`A`, `B`) que arma el turno del paciente: `A-023`.
+  Ventanillas por sede, sin amarrarse a una cola: quien llama elige de cuál.
+- **El consecutivo es por cola y por día** y se reinicia cada mañana. Vive en
+  `contadores_turno` con `unique(cola_id, fecha)`, y `GeneradorDeTurnos` lo toma con
+  `insertOrIgnore` + `lockForUpdate` dentro de una transacción: varios orientadores
+  pidiendo turno a la vez nunca sacan el mismo número.
+- Pedir un turno: `app(GeneradorDeTurnos::class)->siguiente($cola)`.
+- **Todo separado por sede:** el trait `FiltraPorSede` filtra el listado por
+  `users.sede_id` y fija el campo Sede del formulario. El administrador ve todas.
+  Es el patrón que reutilizan los módulos nuevos.
+- Una cola que ya entregó turnos **se desactiva, no se borra**. Una sede con usuarios,
+  colas o ventanillas no se elimina.
+- Módulo `colas` de la matriz. Siembra: `php artisan db:seed --class=ColaSeeder`.
+- Detalle: `docs/colas-y-turnos.md`.
+## Llamado de turnos y pantalla de sala
+- **El ticket lleva dos ciclos:** `estado` es el de la fórmula y `estado_sala`
+  el del turno (`en_espera` → `llamado` → `ausente` / `atendido`). Llamar
+  **no toca `estado`**: entrega solo atiende `listo` y `parcial`, así que si el
+  llamado lo moviera, el paciente que acaban de llamar sería justo el único que
+  no se podría atender. El contrato con entrega no cambió.
+- **Llamar turnos** (`/admin/llamar-turnos`): quien atiende escoge su ventanilla
+  (queda guardada en la sesión) y, si quiere, de cuáles colas llama. Llama el
+  siguiente, vuelve a llamar y marca a los que no se presentaron. Se refresca
+  sola cada 15 segundos.
+- **Los preferenciales de primeras** y, dentro de cada prioridad, por orden de
+  llegada. `LlamadorDeTurnos::siguiente()` toma el candidato con `lockForUpdate`
+  dentro de una transacción: dos ventanillas nunca se llevan el mismo turno.
+- **El ausente no pierde el turno:** sale de la espera, queda en su lista y se
+  vuelve a llamar con un botón. Es un permiso aparte (`turnos.ausente`).
+- **Pantalla de la sala**: `/sala/{codigo}` (ej. `/sala/LA30`). **Pública a
+  propósito** —un televisor no inicia sesión— y por eso solo muestra turno,
+  ventanilla y hora. Qué sale ahí se decide en un solo método,
+  `SalaController::turnosDeLaSede()`: **agregar un campo es publicarlo en la
+  sala de espera**. Una sede inactiva responde 404.
+- Cada llamado queda en la tabla `llamados` (ticket, ventanilla, quién, intento).
+  No se duplica en `auditorias`: esa tabla ya es el registro.
+- Módulo `turnos` de la matriz: ver, llamar, ausente.
+- Detalle: `docs/llamado-de-turnos.md`.
 ## Acceso local
 - URL: http://localhost:8000/admin
 - Usuario administrador sembrado: documento `AdminSispam` (debe existir con ese username en Authentik; la contraseña se gestiona allá)

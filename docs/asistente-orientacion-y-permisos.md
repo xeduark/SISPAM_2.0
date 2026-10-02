@@ -86,10 +86,14 @@ administradores.
 - **Pacientes que ya existían:** si el documento ya estaba registrado, el
   flujo de registro actualiza ese paciente y le suma el soporte.
 
+**Ruta protegida de la orden médica: hecha.** Desde la ficha del paciente, la
+sección **Órdenes médicas** lleva a `soportes/{soporte}/orden-medica`. Exige
+sesión y el permiso `orientacion.ver_orden`, sirve el archivo desde el disco
+privado y **cada acceso queda en la auditoría**. Ver `docs/auditoria.md`.
+
 **Pendiente**, se hará junto con la vista del ticket:
 
-- La generación del ticket.
-- Una ruta protegida para ver o descargar la orden desde la ficha del paciente.
+- La generación del ticket (fase 4 del núcleo).
 
 ## 3. Roles y matriz de permisos
 
@@ -125,7 +129,7 @@ acciones de cada módulo.
 |---|---|
 | Pacientes (`pacientes`) | ver, crear, editar, eliminar |
 | Consultar paciente (`consultar_paciente`) | ver |
-| Orientación (`orientacion`) | usar |
+| Orientación (`orientacion`) | usar, ver_orden |
 | Sedes (`sedes`) | ver, crear, editar, eliminar |
 | Usuarios (`usuarios`) | ver, crear, editar, eliminar |
 
@@ -134,7 +138,11 @@ Reglas:
 - **Sin "ver", el módulo no sale en el menú** y su URL responde 403.
 - **Los permisos de varios roles se suman.**
 - **Rol que se siembra:** `ORIENTADOR`, con Pacientes (ver, crear, editar),
-  Consultar paciente (ver) y Orientación (usar).
+  Consultar paciente (ver) y Orientación (usar, ver la orden médica).
+- **Ojo con los roles que ya existen:** `RolSeeder` usa `firstOrCreate`, así que
+  no agrega permisos nuevos a un rol ya creado. Para que un `ORIENTADOR`
+  existente pueda abrir las órdenes, hay que marcarle **Ver la orden médica**
+  en Administración → Roles y permisos.
 
 ### Para desarrolladores
 

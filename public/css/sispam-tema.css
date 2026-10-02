@@ -96,8 +96,9 @@
 }
 
 /* Es la acción principal de la sección, así que ocupa un ancho generoso.
-   En pantallas angostas se queda en el 100% sin desbordar. */
-.sispam-consulta-savia .fi-btn {
+   En pantallas angostas se queda en el 100% sin desbordar. Va en su propia
+   clase para que los botones secundarios de la fila conserven su tamaño. */
+.sispam-boton-consulta {
     min-width: min(360px, 100%);
     padding-inline: 2rem;
 }
