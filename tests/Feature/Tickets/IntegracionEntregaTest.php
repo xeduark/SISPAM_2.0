@@ -363,12 +363,15 @@ class IntegracionEntregaTest extends TestCase
         $this->assertFalse($dtoTras->listoParaEntrega());
         $this->assertTrue(app(\App\Services\Entrega\SaldoTicket::class)->ticketCompletamenteDispensado($dtoTras));
 
-        // Con Ticket real el estado pasa a `entregado`: mensaje específico.
+        // Con Ticket real el estado pasa a `entregado`: se muestra bloqueado, no «Sin ticket».
         Livewire::test(AtenderEntrega::class)
             ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
             ->call('buscar')
             ->assertNotified('Ticket ya dispensado')
-            ->assertSet('ticket', null);
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', $ticket->numero)
+            ->assertSee('Dispensación bloqueada')
+            ->assertDontSee('No se encontró un ticket disponible');
     }
 
     public function test_escenario_b_entrega_parcial_deja_pendientes_y_ticket_abierto(): void
@@ -458,7 +461,10 @@ class IntegracionEntregaTest extends TestCase
             ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
             ->call('buscar')
             ->assertNotified('Ticket ya dispensado')
-            ->assertSet('ticket', null);
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', $ticket->numero)
+            ->assertSee('Dispensación bloqueada')
+            ->assertDontSee('No se encontró un ticket disponible');
     }
 
     public function test_no_permite_entregar_mas_del_saldo_del_ticket_real(): void
@@ -542,7 +548,10 @@ class IntegracionEntregaTest extends TestCase
             ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
             ->call('buscar')
             ->assertNotified('Ticket anulado')
-            ->assertSet('ticket', null);
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', $ticket->numero)
+            ->assertSee('Dispensación bloqueada')
+            ->assertDontSee('No se encontró un ticket disponible');
     }
 
     public function test_mensaje_claro_cuando_el_ticket_esta_vencido(): void
@@ -554,7 +563,10 @@ class IntegracionEntregaTest extends TestCase
             ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
             ->call('buscar')
             ->assertNotified('Ticket vencido')
-            ->assertSet('ticket', null);
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', $ticket->numero)
+            ->assertSee('Dispensación bloqueada')
+            ->assertDontSee('No se encontró un ticket disponible');
     }
 
     /* ------------------------------------------------------------------ *
@@ -616,7 +628,10 @@ class IntegracionEntregaTest extends TestCase
             ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
             ->call('buscar')
             ->assertNotified('Ticket ya dispensado')
-            ->assertSet('ticket', null);
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', $ticket->numero)
+            ->assertSee('Dispensación bloqueada')
+            ->assertDontSee('No se encontró un ticket disponible');
     }
 
     public function test_d2_domicilio_parcial_no_cierra_ticket_aunque_el_paquete_llegue(): void

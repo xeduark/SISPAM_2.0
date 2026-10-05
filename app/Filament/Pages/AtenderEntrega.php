@@ -243,25 +243,26 @@ class AtenderEntrega extends Page implements HasForms
                     ->schema([
                         Forms\Components\TextInput::make('receptor_nombre')
                             ->label('Nombre de quien recibe')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
                             ->maxLength(255),
                         Forms\Components\TextInput::make('receptor_documento')
                             ->label('Documento de quien recibe')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
                             ->maxLength(40),
                         Forms\Components\TextInput::make('receptor_parentesco')
                             ->label('Parentesco / relación')
                             ->maxLength(80),
                         Forms\Components\FileUpload::make('firma')
                             ->label('Firma o evidencia de recibido')
-                            ->image()
                             ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
                             ->maxSize(5120)
                             ->disk('local')
                             ->directory('soportes/firmas-entrega/tmp')
                             ->visibility('private')
-                            ->required()
-                            ->helperText('Imagen JPG, PNG o WEBP de máximo 5 MB.'),
+                            ->fetchFileInformation(false)
+                            ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
+                            ->helperText('Imagen JPG, PNG o WEBP de máximo 5 MB.')
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
                 Forms\Components\Textarea::make('observaciones')
@@ -298,7 +299,9 @@ class AtenderEntrega extends Page implements HasForms
         // usuario: el dispensador puede rotar de sede). Se valida al registrar.
 
         if (! $dto->listoParaEntrega()) {
-            $this->ticket = null;
+            // El ticket existe: se muestra bloqueado, no «Sin ticket».
+            $this->ticket = $this->ticketAArray($dto);
+            $this->ticketBloqueado = true;
 
             [$titulo, $cuerpo] = match ($dto->estado) {
                 Ticket::ESTADO_ENTREGADO => [
@@ -319,10 +322,13 @@ class AtenderEntrega extends Page implements HasForms
                 ],
             };
 
+            $this->mensajeBloqueo = $cuerpo;
+
             Notification::make()
                 ->title($titulo)
                 ->body($cuerpo)
                 ->warning()
+                ->persistent()
                 ->send();
 
             return;
@@ -415,7 +421,6 @@ class AtenderEntrega extends Page implements HasForms
                 return;
             }
 
-            $this->atencionForm->validate();
             $datos = $this->atencionForm->getState();
 
             $items = collect($datos['items'] ?? [])->map(fn (array $item): array => [
@@ -525,7 +530,19 @@ class AtenderEntrega extends Page implements HasForms
         }
 
         if (is_array($firma)) {
-            $firma = reset($firma) ?: null;
+            $ruta = null;
+            foreach ($firma as $archivo) {
+                if ($archivo instanceof TemporaryUploadedFile) {
+                    return $archivo->get();
+                }
+
+                if (is_string($archivo) && $archivo !== '') {
+                    $ruta = $archivo;
+
+                    break;
+                }
+            }
+            $firma = $ruta;
         }
 
         if (is_string($firma) && $firma !== '' && Storage::disk('local')->exists($firma)) {

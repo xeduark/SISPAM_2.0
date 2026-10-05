@@ -16,6 +16,7 @@ use App\Services\Entrega\RegistrarEntrega;
 use App\Services\Entrega\SaldoTicket;
 use App\Services\Ticket\TicketConsultaMock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -303,7 +304,72 @@ class EntregaModuloTest extends TestCase
             ->set('busqueda.ticket_numero', 'T-UI')
             ->call('buscar')
             ->assertSet('ticketBloqueado', true)
-            ->assertSee('ya fue dispensado completamente');
+            ->assertSee('Dispensación bloqueada')
+            ->assertSee('ya fue dispensado completamente')
+            ->assertDontSee('No se encontró un ticket disponible')
+            ->assertDontSee('Confirmar y registrar entrega');
+    }
+
+    public function test_pantalla_bloquea_ticket_ya_entregado_sin_decir_sin_ticket(): void
+    {
+        $usuario = User::factory()->administrador()->create();
+        Paciente::factory()->create();
+        $this->actingAs($usuario);
+
+        $base = app(TicketConsultaInterface::class)->buscarPorNumero('T-ENTREGADO');
+        $this->assertNotNull($base);
+
+        $this->app->instance(TicketConsultaInterface::class, new class($base) implements TicketConsultaInterface
+        {
+            public function __construct(private $base) {}
+
+            public function buscarPorNumero(string $numero): ?\App\Contracts\Ticket\Dto\TicketDto
+            {
+                return new \App\Contracts\Ticket\Dto\TicketDto(
+                    numero: $this->base->numero,
+                    estado: 'entregado',
+                    sedeId: $this->base->sedeId,
+                    paciente: $this->base->paciente,
+                    items: $this->base->items,
+                    altoCosto: $this->base->altoCosto,
+                    turno: $this->base->turno,
+                );
+            }
+        });
+
+        Livewire::test(AtenderEntrega::class)
+            ->set('busqueda.ticket_numero', 'T-ENTREGADO')
+            ->call('buscar')
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', 'T-ENTREGADO')
+            ->assertSee('Dispensación bloqueada')
+            ->assertSee('ya fue dispensado completamente')
+            ->assertDontSee('No se encontró un ticket disponible')
+            ->assertDontSee('Confirmar y registrar entrega')
+            ->call('registrar')
+            ->assertSet('ticketBloqueado', true);
+
+        $this->assertDatabaseCount('entregas', 0);
+    }
+
+    public function test_contenido_firma_lee_ruta_en_disco_local(): void
+    {
+        Storage::fake('local');
+        $usuario = User::factory()->administrador()->create();
+        $this->actingAs($usuario);
+
+        $ruta = 'soportes/firmas-entrega/tmp/firma-regresion.png';
+        Storage::disk('local')->put($ruta, 'bytes-firma-ok');
+
+        $page = new AtenderEntrega;
+        $ref = new \ReflectionMethod(AtenderEntrega::class, 'contenidoFirma');
+        $ref->setAccessible(true);
+
+        $contenido = $ref->invoke($page, ['uuid-demo' => $ruta]);
+
+        $this->assertSame('bytes-firma-ok', $contenido);
+        $this->assertNull($ref->invoke($page, null));
+        $this->assertNull($ref->invoke($page, []));
     }
 
     public function test_permisos_del_modulo_entrega(): void
