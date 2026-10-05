@@ -51,7 +51,9 @@ class TicketConsultaMock implements TicketConsultaInterface
                 contactoConfirmado: true,
             );
 
-        $sedeId = (int) (auth()->user()?->sede_id ?? 1);
+        $sedeId = (int) (auth()->user()?->sede_id
+            ?? \App\Models\Sede::query()->orderBy('id')->value('id')
+            ?? 1);
         $altoCosto = str_ends_with(strtoupper($numero), 'AC');
 
         return new TicketDto(
