@@ -17,18 +17,17 @@ class ViewDomicilioEnvio extends ViewRecord
             Actions\Action::make('cambiarEstado')
                 ->label('Cambiar estado')
                 ->icon('heroicon-o-arrow-path')
-                ->visible(fn (): bool => (bool) auth()->user()?->puede('entrega.domicilio'))
+                ->visible(fn (): bool => (bool) auth()->user()?->puede('entrega.domicilio')
+                    && $this->record->siguientesEstados() !== [])
                 ->fillForm(fn (): array => [
-                    'estado' => $this->record->estado,
                     'novedad_detalle' => $this->record->novedad_detalle,
                 ])
-                ->form(DomicilioEnvioResource::formularioCambioEstado())
+                ->form(fn (): array => DomicilioEnvioResource::formularioCambioEstado($this->record))
                 ->action(function (array $data): void {
                     /** @var DomicilioEnvio $record */
                     $record = $this->record;
                     DomicilioEnvioResource::aplicarCambioEstado($record, $data);
-                    $this->refreshFormData(['estado', 'novedad_detalle', 'referencia_externa']);
-                    $this->record->refresh()->load('historial');
+                    $this->record->refresh()->load(['historial', 'entrega.items', 'entrega.paciente']);
                 }),
         ];
     }

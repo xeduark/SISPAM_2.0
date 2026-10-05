@@ -60,9 +60,9 @@ class TicketConsultaMock implements TicketConsultaInterface
             sedeId: $sedeId,
             paciente: $resumen,
             items: [
-                new TicketItemDto('1', 'MED-001', 'ACETAMINOFEN 500 MG TABLETA', 20, 'TAB'),
+                new TicketItemDto('1', 'MED-001', 'ACETAMINOFEN 500 MG TABLETA', 30, 'TAB'),
                 new TicketItemDto('2', 'MED-002', 'LOSARTAN 50 MG TABLETA', 30, 'TAB'),
-                new TicketItemDto('3', 'MED-003', 'METFORMINA 850 MG TABLETA', 60, 'TAB'),
+                new TicketItemDto('3', 'MED-003', 'METFORMINA 850 MG TABLETA', 30, 'TAB'),
             ],
             altoCosto: $altoCosto,
             turno: $numero,

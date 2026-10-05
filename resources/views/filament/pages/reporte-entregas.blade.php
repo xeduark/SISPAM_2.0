@@ -23,32 +23,43 @@
                     <thead>
                         <tr class="border-b text-left text-gray-500">
                             <th class="py-2 pr-3">Ticket</th>
+                            <th class="py-2 pr-3">Paciente / Doc.</th>
                             <th class="py-2 pr-3">Tipo</th>
                             <th class="py-2 pr-3">Estado</th>
-                            <th class="py-2 pr-3">Sede</th>
-                            <th class="py-2 pr-3">Paciente</th>
+                            <th class="py-2 pr-3">Sede de atención</th>
+                            <th class="py-2 pr-3">Usuario</th>
                             <th class="py-2 pr-3">Fecha</th>
-                            <th class="py-2">Ítems</th>
+                            <th class="py-2">Ítems (pend.)</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($resultados as $entrega)
                             <tr class="border-b border-gray-100 dark:border-gray-800">
                                 <td class="py-2 pr-3">{{ $entrega->ticket_numero }}</td>
+                                <td class="py-2 pr-3">
+                                    {{ $entrega->paciente?->nombre_completo ?? '—' }}
+                                    <div class="text-xs text-gray-500">
+                                        {{ $entrega->paciente?->tipo_documento }} {{ $entrega->paciente?->numero_documento }}
+                                    </div>
+                                </td>
                                 <td class="py-2 pr-3">{{ $entrega->tipo }}</td>
-                                <td class="py-2 pr-3">{{ $entrega->estado }}</td>
+                                <td class="py-2 pr-3">
+                                    {{ $entrega->estado }}
+                                    @if ($entrega->domicilioEnvio)
+                                        <div class="text-xs text-gray-500">Dom: {{ $entrega->domicilioEnvio->estado }}</div>
+                                    @endif
+                                </td>
                                 <td class="py-2 pr-3">{{ $entrega->sede?->nombre }}</td>
-                                <td class="py-2 pr-3">{{ $entrega->paciente?->nombre_completo ?? '—' }}</td>
+                                <td class="py-2 pr-3">{{ $entrega->usuario?->nombre_completo }}</td>
                                 <td class="py-2 pr-3">{{ $entrega->created_at?->format('d/m/Y H:i') }}</td>
                                 <td class="py-2">
                                     {{ $entrega->items->count() }}
-                                    ({{ $entrega->items->where('resultado', 'faltante')->count() }} falt. /
-                                    {{ $entrega->items->where('resultado', 'pendiente')->count() }} pend.)
+                                    (pend. {{ $entrega->items->sum('cantidad_pendiente') }})
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="py-4 text-gray-500">No hay entregas con esos filtros.</td>
+                                <td colspan="8" class="py-4 text-gray-500">No hay entregas con esos filtros.</td>
                             </tr>
                         @endforelse
                     </tbody>

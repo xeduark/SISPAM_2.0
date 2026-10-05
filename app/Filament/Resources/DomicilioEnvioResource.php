@@ -47,31 +47,46 @@ class DomicilioEnvioResource extends Resource
     /**
      * @return array<int, Forms\Components\Component>
      */
-    public static function formularioCambioEstado(): array
+    public static function formularioCambioEstado(DomicilioEnvio $record): array
     {
+        $opciones = $record->siguientesEstados();
+
         return [
+            Forms\Components\Placeholder::make('estado_actual')
+                ->label('Estado actual')
+                ->content(DomicilioEnvio::estados()[$record->estado] ?? $record->estado),
             Forms\Components\Select::make('estado')
-                ->label('Estado')
-                ->options(DomicilioEnvio::estados())
-                ->required(),
+                ->label('Nuevo estado')
+                ->options($opciones)
+                ->required()
+                ->helperText($opciones === []
+                    ? 'Este envío no admite más cambios de estado.'
+                    : 'Solo se muestran transiciones válidas.'),
             Forms\Components\Textarea::make('novedad_detalle')
-                ->label('Detalle de novedad')
-                ->rows(3),
+                ->label('Novedad / observación')
+                ->rows(3)
+                ->helperText('Obligatorio en novedad o no entregado.'),
             Forms\Components\TextInput::make('nota_historial')
-                ->label('Nota del cambio')
+                ->label('Nota del historial')
                 ->maxLength(255),
         ];
     }
 
     public static function aplicarCambioEstado(DomicilioEnvio $record, array $data): void
     {
-        app(RegistrarEntrega::class)->cambiarEstadoDomicilio(
-            $record,
-            $data['estado'],
-            auth()->user(),
-            $data['nota_historial'] ?? null,
-            $data['novedad_detalle'] ?? null,
-        );
+        try {
+            app(RegistrarEntrega::class)->cambiarEstadoDomicilio(
+                $record,
+                $data['estado'],
+                auth()->user(),
+                $data['nota_historial'] ?? null,
+                $data['novedad_detalle'] ?? null,
+            );
+        } catch (\InvalidArgumentException $e) {
+            Notification::make()->danger()->title('Cambio no permitido')->body($e->getMessage())->send();
+
+            return;
+        }
 
         Notification::make()
             ->success()
@@ -84,28 +99,44 @@ class DomicilioEnvioResource extends Resource
         return $infolist->schema([
             Infolists\Components\Section::make('Envío')->schema([
                 Infolists\Components\TextEntry::make('entrega.ticket_numero')->label('Ticket'),
+                Infolists\Components\TextEntry::make('entrega.paciente.nombre_completo')->label('Paciente')->placeholder('—'),
+                Infolists\Components\TextEntry::make('entrega.sede.nombre')->label('Sede de atención')->placeholder('—'),
+                Infolists\Components\TextEntry::make('created_at')->label('Fecha de creación')->dateTime('d/m/Y H:i'),
                 Infolists\Components\TextEntry::make('estado')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => DomicilioEnvio::estados()[$state] ?? $state),
-                Infolists\Components\TextEntry::make('referencia_externa')->label('Ref. Dómina')->placeholder('—'),
-                Infolists\Components\TextEntry::make('telefono'),
-                Infolists\Components\TextEntry::make('direccion'),
+                Infolists\Components\TextEntry::make('updated_at')->label('Último cambio')->dateTime('d/m/Y H:i'),
+                Infolists\Components\TextEntry::make('referencia_externa')->label('Referencia externa')->placeholder('—'),
+                Infolists\Components\TextEntry::make('telefono')->label('Teléfono'),
+                Infolists\Components\TextEntry::make('direccion')->label('Dirección'),
                 Infolists\Components\TextEntry::make('barrio'),
                 Infolists\Components\TextEntry::make('ciudad'),
                 Infolists\Components\TextEntry::make('indicaciones_entrega')->label('Indicaciones')->columnSpanFull(),
                 Infolists\Components\TextEntry::make('novedad_detalle')->label('Novedad')->columnSpanFull()->placeholder('—'),
             ])->columns(3),
-            Infolists\Components\Section::make('Historial')->schema([
+            Infolists\Components\Section::make('Medicamentos')->schema([
+                Infolists\Components\RepeatableEntry::make('entrega.items')->schema([
+                    Infolists\Components\TextEntry::make('codigo'),
+                    Infolists\Components\TextEntry::make('nombre'),
+                    Infolists\Components\TextEntry::make('cantidad_solicitada')->label('Solicitada'),
+                    Infolists\Components\TextEntry::make('cantidad_entregada')->label('Entregada'),
+                    Infolists\Components\TextEntry::make('cantidad_pendiente')->label('Pendiente'),
+                    Infolists\Components\TextEntry::make('motivo')->placeholder('—'),
+                ])->columns(3),
+            ]),
+            Infolists\Components\Section::make('Historial de estados')->schema([
                 Infolists\Components\RepeatableEntry::make('historial')->schema([
                     Infolists\Components\TextEntry::make('estado_anterior')
+                        ->label('Anterior')
                         ->formatStateUsing(fn (?string $state): string => $state
                             ? (DomicilioEnvio::estados()[$state] ?? $state)
                             : '—'),
                     Infolists\Components\TextEntry::make('estado_nuevo')
+                        ->label('Nuevo')
                         ->formatStateUsing(fn (string $state): string => DomicilioEnvio::estados()[$state] ?? $state),
+                    Infolists\Components\TextEntry::make('created_at')->label('Fecha y hora')->dateTime('d/m/Y H:i'),
                     Infolists\Components\TextEntry::make('usuario.nombre_completo')->label('Usuario')->placeholder('—'),
-                    Infolists\Components\TextEntry::make('nota')->placeholder('—'),
-                    Infolists\Components\TextEntry::make('created_at')->label('Fecha')->dateTime('d/m/Y H:i'),
+                    Infolists\Components\TextEntry::make('nota')->label('Observación')->placeholder('—'),
                 ])->columns(3),
             ]),
         ]);
@@ -116,30 +147,33 @@ class DomicilioEnvioResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('entrega.ticket_numero')->label('Ticket')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('entrega.paciente.nombre_completo')->label('Paciente')->toggleable(),
+                Tables\Columns\TextColumn::make('entrega.sede.nombre')->label('Sede de atención')->sortable()->toggleable(),
                 Tables\Columns\TextColumn::make('estado')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => DomicilioEnvio::estados()[$state] ?? $state)
                     ->sortable(),
-                Tables\Columns\TextColumn::make('ciudad')->toggleable(),
                 Tables\Columns\TextColumn::make('direccion')->limit(40)->toggleable(),
+                Tables\Columns\TextColumn::make('telefono')->toggleable(),
                 Tables\Columns\TextColumn::make('referencia_externa')->label('Ref. externa')->placeholder('—')->toggleable(),
-                Tables\Columns\TextColumn::make('updated_at')->label('Actualizado')->dateTime('d/m/Y H:i')->sortable(),
+                Tables\Columns\TextColumn::make('created_at')->label('Creado')->dateTime('d/m/Y H:i')->toggleable(),
+                Tables\Columns\TextColumn::make('updated_at')->label('Último cambio')->dateTime('d/m/Y H:i')->sortable(),
             ])
             ->defaultSort('updated_at', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('estado')->options(DomicilioEnvio::estados()),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                Tables\Actions\ViewAction::make()->label('Ver detalle'),
                 Tables\Actions\Action::make('cambiarEstado')
                     ->label('Cambiar estado')
                     ->icon('heroicon-o-arrow-path')
-                    ->visible(fn (): bool => (bool) auth()->user()?->puede('entrega.domicilio'))
+                    ->visible(fn (DomicilioEnvio $record): bool => (bool) auth()->user()?->puede('entrega.domicilio')
+                        && $record->siguientesEstados() !== [])
                     ->fillForm(fn (DomicilioEnvio $record): array => [
-                        'estado' => $record->estado,
                         'novedad_detalle' => $record->novedad_detalle,
                     ])
-                    ->form(self::formularioCambioEstado())
+                    ->form(fn (DomicilioEnvio $record): array => self::formularioCambioEstado($record))
                     ->action(fn (DomicilioEnvio $record, array $data) => self::aplicarCambioEstado($record, $data)),
             ]);
     }

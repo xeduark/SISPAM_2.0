@@ -7,12 +7,15 @@ use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Filament\Resources\EntregaResource;
 use App\Models\Entrega;
 use App\Models\EntregaItem;
+use App\Models\Sede;
 use App\Services\Entrega\RegistrarEntrega;
+use App\Services\Entrega\SaldoTicket;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Storage;
@@ -45,10 +48,15 @@ class AtenderEntrega extends Page implements HasForms
     /** @var array<string, mixed> */
     public array $atencion = [];
 
-    /** Vista serializable del ticket (Livewire no serializa el DTO). */
     public ?array $ticket = null;
 
     public bool $consultado = false;
+
+    public bool $ticketBloqueado = false;
+
+    public ?string $mensajeBloqueo = null;
+
+    public bool $procesando = false;
 
     public function mount(): void
     {
@@ -56,6 +64,7 @@ class AtenderEntrega extends Page implements HasForms
         $this->atencionForm->fill([
             'tipo' => Entrega::TIPO_PRESENCIAL,
             'receptor_parentesco' => 'Paciente',
+            'sede_id' => auth()->user()?->sede_id,
         ]);
     }
 
@@ -72,11 +81,12 @@ class AtenderEntrega extends Page implements HasForms
         return $form
             ->schema([
                 Forms\Components\TextInput::make('ticket_numero')
-                    ->label('Número o turno del ticket')
+                    ->label('Número de turno')
                     ->placeholder('Ej. T-1001')
                     ->required()
                     ->maxLength(64)
-                    ->autocomplete(false),
+                    ->autocomplete(false)
+                    ->helperText('Consulta el número de turno para visualizar los medicamentos pendientes de dispensación.'),
             ])
             ->statePath('busqueda');
     }
@@ -85,99 +95,186 @@ class AtenderEntrega extends Page implements HasForms
     {
         return $form
             ->schema([
-                Forms\Components\Radio::make('tipo')
-                    ->label('Tipo de entrega')
-                    ->options([
-                        Entrega::TIPO_PRESENCIAL => 'Presencial',
-                        Entrega::TIPO_DOMICILIO => 'Domicilio (Dómina)',
-                    ])
-                    ->inline()
-                    ->required()
-                    ->live(),
-                Forms\Components\TextInput::make('receptor_nombre')
-                    ->label('Nombre de quien recibe')
-                    ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->visible(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('receptor_documento')
-                    ->label('Documento de quien recibe')
-                    ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->visible(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->maxLength(40),
-                Forms\Components\TextInput::make('receptor_parentesco')
-                    ->label('Parentesco / relación')
-                    ->visible(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->maxLength(80),
-                Forms\Components\FileUpload::make('firma')
-                    ->label('Firma del receptor')
-                    ->image()
-                    ->disk('local')
-                    ->directory('soportes/firmas-entrega/tmp')
-                    ->visibility('private')
-                    ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->visible(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
-                    ->helperText('Foto o imagen de la firma de quien recibe.'),
-                Forms\Components\Textarea::make('observaciones')
-                    ->label('Observaciones')
-                    ->rows(2)
-                    ->columnSpanFull(),
-                Forms\Components\Repeater::make('items')
-                    ->label('Medicamentos del ticket')
+                Forms\Components\Section::make('Sede y tipo de entrega')
                     ->schema([
-                        Forms\Components\Hidden::make('ticket_item_id'),
-                        Forms\Components\Hidden::make('codigo'),
-                        Forms\Components\Hidden::make('nombre'),
-                        Forms\Components\Hidden::make('cantidad_solicitada'),
-                        Forms\Components\Hidden::make('unidad'),
-                        Forms\Components\Placeholder::make('resumen')
-                            ->label('Medicamento')
-                            ->content(fn (Get $get): string => trim(
-                                ($get('codigo') ?? '').' — '.($get('nombre') ?? '').' ('
-                                .($get('cantidad_solicitada') ?? '').' '.($get('unidad') ?? '').')'
-                            )),
-                        Forms\Components\Select::make('resultado')
-                            ->label('Resultado')
+                        Forms\Components\Select::make('sede_id')
+                            ->label('Sede de atención')
+                            ->options(fn (): array => Sede::query()
+                                ->where('activa', true)
+                                ->orderBy('nombre')
+                                ->pluck('nombre', 'id')
+                                ->all())
+                            ->required()
+                            ->searchable()
+                            ->helperText('Indica en qué sede estás dispensando ahora. Quedará guardada en la entrega aunque luego cambies de sede.'),
+                        Forms\Components\Radio::make('tipo')
+                            ->label('¿Cómo se entrega?')
                             ->options([
-                                EntregaItem::RESULTADO_ENTREGADO => 'Entregado',
-                                EntregaItem::RESULTADO_FALTANTE => 'Faltante',
-                                EntregaItem::RESULTADO_PENDIENTE => 'Pendiente',
+                                Entrega::TIPO_PRESENCIAL => 'Presencial (paciente o autorizado en el mostrador)',
+                                Entrega::TIPO_DOMICILIO => 'Domicilio (envío a la dirección del paciente)',
                             ])
                             ->required()
-                            ->live()
-                            ->default(EntregaItem::RESULTADO_ENTREGADO),
-                        Forms\Components\TextInput::make('cantidad_entregada')
-                            ->label('Cantidad entregada')
-                            ->numeric()
+                            ->live(),
+                    ]),
+                Forms\Components\Section::make('Medicamentos a dispensar')
+                    ->description('Indica cuánto entregas ahora. Lo no entregado queda como cantidad pendiente; el motivo explica el faltante o el aplazamiento.')
+                    ->schema([
+                        Forms\Components\Repeater::make('items')
+                            ->label('')
+                            ->schema([
+                                Forms\Components\Hidden::make('ticket_item_id'),
+                                Forms\Components\Hidden::make('codigo'),
+                                Forms\Components\Hidden::make('nombre'),
+                                Forms\Components\Hidden::make('cantidad_solicitada'),
+                                Forms\Components\Hidden::make('unidad'),
+                                Forms\Components\Placeholder::make('resumen')
+                                    ->label('Medicamento')
+                                    ->content(fn (Get $get): string => trim(
+                                        ($get('codigo') ?? '').' — '.($get('nombre') ?? '')
+                                    )),
+                                Forms\Components\Placeholder::make('solicitado')
+                                    ->label('Pendiente por entregar')
+                                    ->content(fn (Get $get): string => trim(
+                                        ($get('cantidad_solicitada') ?? '0').' '.($get('unidad') ?? '')
+                                    )),
+                                Forms\Components\TextInput::make('cantidad_entregada')
+                                    ->label('Cantidad a entregar ahora')
+                                    ->numeric()
+                                    ->required()
+                                    ->minValue(0)
+                                    ->live(debounce: 400)
+                                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                                        $solicitada = (float) ($get('cantidad_solicitada') ?? 0);
+                                        $entregada = max(0, min($solicitada, (float) $state));
+                                        $set('cantidad_entregada', $entregada);
+                                        $pendiente = round($solicitada - $entregada, 2);
+                                        if ($pendiente <= 0) {
+                                            $set('resultado', EntregaItem::RESULTADO_ENTREGADO);
+                                            $set('motivo', null);
+                                        } elseif ($entregada > 0) {
+                                            $set('resultado', EntregaItem::RESULTADO_PARCIAL);
+                                        } elseif (! in_array($get('resultado'), [
+                                            EntregaItem::RESULTADO_FALTANTE,
+                                            EntregaItem::RESULTADO_PENDIENTE,
+                                        ], true)) {
+                                            $set('resultado', EntregaItem::RESULTADO_FALTANTE);
+                                        }
+                                    }),
+                                Forms\Components\Placeholder::make('pendiente_calc')
+                                    ->label('Quedará pendiente')
+                                    ->content(function (Get $get): string {
+                                        $solicitada = (float) ($get('cantidad_solicitada') ?? 0);
+                                        $entregada = (float) ($get('cantidad_entregada') ?? 0);
+
+                                        return max(0, round($solicitada - $entregada, 2)).' '.($get('unidad') ?? '');
+                                    }),
+                                Forms\Components\Select::make('resultado')
+                                    ->label('Clasificación del pendiente / faltante')
+                                    ->helperText('Faltante = sin existencias. Pendiente = se aplaza la entrega. La cantidad pendiente siempre se calcula.')
+                                    ->options(function (Get $get): array {
+                                        $solicitada = (float) ($get('cantidad_solicitada') ?? 0);
+                                        $entregada = (float) ($get('cantidad_entregada') ?? 0);
+                                        if ($entregada <= 0) {
+                                            return [
+                                                EntregaItem::RESULTADO_FALTANTE => 'Faltante (sin existencias)',
+                                                EntregaItem::RESULTADO_PENDIENTE => 'Aplazado (se entrega después)',
+                                            ];
+                                        }
+                                        if ($entregada < $solicitada) {
+                                            return [
+                                                EntregaItem::RESULTADO_PARCIAL => 'Entrega parcial',
+                                            ];
+                                        }
+
+                                        return [
+                                            EntregaItem::RESULTADO_ENTREGADO => 'Entregado completo',
+                                        ];
+                                    })
+                                    ->required()
+                                    ->live(),
+                                Forms\Components\TextInput::make('motivo')
+                                    ->label('Motivo')
+                                    ->required(function (Get $get): bool {
+                                        $solicitada = (float) ($get('cantidad_solicitada') ?? 0);
+                                        $entregada = (float) ($get('cantidad_entregada') ?? 0);
+
+                                        return $entregada < $solicitada;
+                                    })
+                                    ->visible(function (Get $get): bool {
+                                        $solicitada = (float) ($get('cantidad_solicitada') ?? 0);
+                                        $entregada = (float) ($get('cantidad_entregada') ?? 0);
+
+                                        return $entregada < $solicitada;
+                                    })
+                                    ->placeholder('Ej. Faltante por disponibilidad'),
+                            ])
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false)
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->live(),
+                        Forms\Components\Placeholder::make('resumen_cantidades')
+                            ->label('Resumen antes de confirmar')
+                            ->content(function (Get $get): string {
+                                $items = $get('items') ?? [];
+                                $solicitada = 0.0;
+                                $entregada = 0.0;
+                                foreach ($items as $item) {
+                                    $solicitada += (float) ($item['cantidad_solicitada'] ?? 0);
+                                    $entregada += (float) ($item['cantidad_entregada'] ?? 0);
+                                }
+                                $pendiente = max(0, round($solicitada - $entregada, 2));
+
+                                return "Se entregarán {$entregada} de {$solicitada} unidades. Quedarán {$pendiente} pendientes.";
+                            })
+                            ->columnSpanFull(),
+                    ]),
+                Forms\Components\Section::make('Receptor y firma')
+                    ->description('Obligatorio solo en entrega presencial.')
+                    ->visible(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
+                    ->schema([
+                        Forms\Components\TextInput::make('receptor_nombre')
+                            ->label('Nombre de quien recibe')
                             ->required()
-                            ->visible(fn (Get $get): bool => $get('resultado') === EntregaItem::RESULTADO_ENTREGADO)
-                            ->default(fn (Get $get) => $get('cantidad_solicitada')),
-                        Forms\Components\TextInput::make('motivo')
-                            ->label('Motivo')
-                            ->required(fn (Get $get): bool => in_array($get('resultado'), [
-                                EntregaItem::RESULTADO_FALTANTE,
-                                EntregaItem::RESULTADO_PENDIENTE,
-                            ], true))
-                            ->visible(fn (Get $get): bool => in_array($get('resultado'), [
-                                EntregaItem::RESULTADO_FALTANTE,
-                                EntregaItem::RESULTADO_PENDIENTE,
-                            ], true)),
+                            ->maxLength(255),
+                        Forms\Components\TextInput::make('receptor_documento')
+                            ->label('Documento de quien recibe')
+                            ->required()
+                            ->maxLength(40),
+                        Forms\Components\TextInput::make('receptor_parentesco')
+                            ->label('Parentesco / relación')
+                            ->maxLength(80),
+                        Forms\Components\FileUpload::make('firma')
+                            ->label('Firma o evidencia de recibido')
+                            ->image()
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+                            ->maxSize(5120)
+                            ->disk('local')
+                            ->directory('soportes/firmas-entrega/tmp')
+                            ->visibility('private')
+                            ->required()
+                            ->helperText('Imagen JPG, PNG o WEBP de máximo 5 MB.'),
                     ])
-                    ->addable(false)
-                    ->deletable(false)
-                    ->reorderable(false)
+                    ->columns(2),
+                Forms\Components\Textarea::make('observaciones')
+                    ->label('Observaciones generales')
+                    ->rows(2)
                     ->columnSpanFull(),
             ])
-            ->columns(2)
             ->statePath('atencion');
     }
 
-    public function buscar(TicketConsultaInterface $tickets): void
+    public function buscar(TicketConsultaInterface $tickets, SaldoTicket $saldo): void
     {
         $this->busquedaForm->validate();
         $numero = trim((string) ($this->busqueda['ticket_numero'] ?? ''));
 
         $dto = $tickets->buscarPorNumero($numero);
         $this->consultado = true;
+        $this->ticketBloqueado = false;
+        $this->mensajeBloqueo = null;
+        $this->procesando = false;
 
         if (! $dto) {
             $this->ticket = null;
@@ -209,9 +306,32 @@ class AtenderEntrega extends Page implements HasForms
             $this->ticket = null;
             Notification::make()
                 ->title('Ticket no listo')
-                ->body('El ticket no está en estado listo o parcial para entrega.')
+                ->body('El ticket no está disponible para dispensación en este momento.')
                 ->warning()
                 ->send();
+
+            return;
+        }
+
+        if ($saldo->ticketCompletamenteDispensado($dto)) {
+            $this->ticket = $this->ticketAArray($dto);
+            $this->ticketBloqueado = true;
+            $this->mensajeBloqueo = 'Este ticket ya fue dispensado completamente.';
+            Notification::make()
+                ->title('Ticket ya dispensado')
+                ->body($this->mensajeBloqueo)
+                ->warning()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        $pendientes = $saldo->lineasPendientes($dto);
+        if ($pendientes === []) {
+            $this->ticket = $this->ticketAArray($dto);
+            $this->ticketBloqueado = true;
+            $this->mensajeBloqueo = 'Este ticket ya fue dispensado completamente.';
 
             return;
         }
@@ -221,19 +341,20 @@ class AtenderEntrega extends Page implements HasForms
 
         $this->atencionForm->fill([
             'tipo' => Entrega::TIPO_PRESENCIAL,
+            'sede_id' => auth()->user()?->sede_id,
             'receptor_nombre' => $dto->paciente->nombreCompleto,
             'receptor_documento' => $dto->paciente->numeroDocumento,
             'receptor_parentesco' => 'Paciente',
             'observaciones' => null,
             'firma' => null,
-            'items' => collect($dto->items)->map(fn ($item): array => [
-                'ticket_item_id' => $item->id,
-                'codigo' => $item->codigo,
-                'nombre' => $item->nombre,
-                'cantidad_solicitada' => $item->cantidad,
-                'unidad' => $item->unidad,
+            'items' => collect($pendientes)->map(fn (array $linea): array => [
+                'ticket_item_id' => $linea['item']->id,
+                'codigo' => $linea['item']->codigo,
+                'nombre' => $linea['item']->nombre,
+                'cantidad_solicitada' => $linea['pendiente'],
+                'unidad' => $linea['item']->unidad,
                 'resultado' => EntregaItem::RESULTADO_ENTREGADO,
-                'cantidad_entregada' => $item->cantidad,
+                'cantidad_entregada' => $linea['pendiente'],
                 'motivo' => null,
             ])->all(),
         ]);
@@ -243,9 +364,13 @@ class AtenderEntrega extends Page implements HasForms
     {
         $this->ticket = null;
         $this->consultado = false;
+        $this->ticketBloqueado = false;
+        $this->mensajeBloqueo = null;
+        $this->procesando = false;
         $this->busquedaForm->fill([]);
         $this->atencionForm->fill([
             'tipo' => Entrega::TIPO_PRESENCIAL,
+            'sede_id' => auth()->user()?->sede_id,
             'receptor_parentesco' => 'Paciente',
             'items' => [],
         ]);
@@ -253,59 +378,59 @@ class AtenderEntrega extends Page implements HasForms
 
     public function registrar(TicketConsultaInterface $tickets, RegistrarEntrega $registrar): void
     {
-        if (! $this->ticket) {
+        if (! $this->ticket || $this->ticketBloqueado) {
             return;
         }
 
-        $dto = $tickets->buscarPorNumero((string) $this->ticket['numero']);
-        if (! $dto || ! $dto->listoParaEntrega()) {
-            Notification::make()
-                ->title('Ticket no disponible')
-                ->body('Vuelve a consultar el ticket antes de registrar.')
-                ->danger()
-                ->send();
-
+        if ($this->procesando) {
             return;
         }
 
-        $this->atencionForm->validate();
-        $datos = $this->atencionForm->getState();
+        $this->procesando = true;
 
-        $items = collect($datos['items'] ?? [])->map(function (array $item): array {
-            $resultado = $item['resultado'];
-            $cantidad = $resultado === EntregaItem::RESULTADO_ENTREGADO
-                ? (float) ($item['cantidad_entregada'] ?? 0)
-                : 0;
-
-            return [
-                'ticket_item_id' => (string) $item['ticket_item_id'],
-                'codigo' => (string) $item['codigo'],
-                'nombre' => (string) $item['nombre'],
-                'cantidad_solicitada' => (float) $item['cantidad_solicitada'],
-                'unidad' => (string) ($item['unidad'] ?? 'UND'),
-                'cantidad_entregada' => $cantidad,
-                'resultado' => $resultado,
-                'motivo' => $item['motivo'] ?? null,
-            ];
-        })->all();
-
-        $firmaContenido = null;
-        if (($datos['tipo'] ?? null) === Entrega::TIPO_PRESENCIAL) {
-            $firmaContenido = $this->contenidoFirma($datos['firma'] ?? null);
-            if (blank($firmaContenido)) {
+        try {
+            $dto = $tickets->buscarPorNumero((string) $this->ticket['numero']);
+            if (! $dto || ! $dto->listoParaEntrega()) {
                 Notification::make()
-                    ->title('Falta la firma')
-                    ->body('La entrega presencial requiere la firma del receptor.')
+                    ->title('Ticket no disponible')
+                    ->body('Vuelve a consultar el ticket antes de registrar.')
                     ->danger()
                     ->send();
 
                 return;
             }
-        }
 
-        try {
+            $this->atencionForm->validate();
+            $datos = $this->atencionForm->getState();
+
+            $items = collect($datos['items'] ?? [])->map(fn (array $item): array => [
+                'ticket_item_id' => (string) $item['ticket_item_id'],
+                'codigo' => (string) $item['codigo'],
+                'nombre' => (string) $item['nombre'],
+                'cantidad_solicitada' => (float) $item['cantidad_solicitada'],
+                'unidad' => (string) ($item['unidad'] ?? 'UND'),
+                'cantidad_entregada' => (float) ($item['cantidad_entregada'] ?? 0),
+                'resultado' => (string) ($item['resultado'] ?? EntregaItem::RESULTADO_FALTANTE),
+                'motivo' => $item['motivo'] ?? null,
+            ])->all();
+
+            $firmaContenido = null;
+            if (($datos['tipo'] ?? null) === Entrega::TIPO_PRESENCIAL) {
+                $firmaContenido = $this->contenidoFirma($datos['firma'] ?? null);
+                if (blank($firmaContenido)) {
+                    Notification::make()
+                        ->title('Falta la firma')
+                        ->body('La entrega presencial requiere la firma del receptor.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+            }
+
             $entrega = $registrar->handle($dto, auth()->user(), [
                 'tipo' => $datos['tipo'],
+                'sede_id' => (int) ($datos['sede_id'] ?? auth()->user()->sede_id),
                 'observaciones' => $datos['observaciones'] ?? null,
                 'receptor_nombre' => $datos['receptor_nombre'] ?? null,
                 'receptor_documento' => $datos['receptor_documento'] ?? null,
@@ -321,6 +446,8 @@ class AtenderEntrega extends Page implements HasForms
                 ->send();
 
             return;
+        } finally {
+            $this->procesando = false;
         }
 
         Notification::make()
@@ -360,30 +487,16 @@ class AtenderEntrega extends Page implements HasForms
         if ($ticket->altoCosto) {
             Notification::make()
                 ->title('Alto costo / oncológico')
-                ->body('El ticket está marcado como alto costo. Verifica el protocolo antes de dispensar.')
+                ->body('Verifica el protocolo antes de dispensar.')
                 ->warning()
-                ->persistent()
                 ->send();
         }
 
         if (! $ticket->paciente->contactoConfirmado || blank($ticket->paciente->direccion)) {
             Notification::make()
                 ->title('Contacto incompleto')
-                ->body('El paciente no tiene dirección o contacto confirmado. El domicilio puede fallar.')
+                ->body('Revisa dirección y teléfono antes de un domicilio.')
                 ->warning()
-                ->send();
-        }
-
-        $pendientesPrevios = EntregaItem::query()
-            ->whereHas('entrega', fn ($q) => $q->where('ticket_numero', $ticket->numero))
-            ->whereIn('resultado', [EntregaItem::RESULTADO_FALTANTE, EntregaItem::RESULTADO_PENDIENTE])
-            ->count();
-
-        if ($pendientesPrevios > 0) {
-            Notification::make()
-                ->title('Hay ítems pendientes o faltantes')
-                ->body("Este ticket tiene {$pendientesPrevios} medicamento(s) pendientes/faltantes de entregas anteriores.")
-                ->info()
                 ->send();
         }
     }

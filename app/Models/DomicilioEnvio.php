@@ -39,6 +39,49 @@ class DomicilioEnvio extends Model
     }
 
     /**
+     * Transiciones internas permitidas (hasta tener la API de Dómina).
+     *
+     * @return array<string, list<string>>
+     */
+    public static function transicionesPermitidas(): array
+    {
+        return [
+            self::ESTADO_PENDIENTE_ENVIO => [self::ESTADO_PREPARADO],
+            self::ESTADO_PREPARADO => [self::ESTADO_ENVIADO_DOMINA],
+            self::ESTADO_ENVIADO_DOMINA => [self::ESTADO_EN_RUTA],
+            self::ESTADO_EN_RUTA => [
+                self::ESTADO_ENTREGADO,
+                self::ESTADO_NO_ENTREGADO,
+                self::ESTADO_NOVEDAD,
+            ],
+            self::ESTADO_NOVEDAD => [
+                self::ESTADO_EN_RUTA,
+                self::ESTADO_NO_ENTREGADO,
+                self::ESTADO_PREPARADO,
+            ],
+            self::ESTADO_ENTREGADO => [],
+            self::ESTADO_NO_ENTREGADO => [self::ESTADO_PREPARADO, self::ESTADO_NOVEDAD],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function siguientesEstados(): array
+    {
+        $permitidos = self::transicionesPermitidas()[$this->estado] ?? [];
+
+        return collect(self::estados())
+            ->only($permitidos)
+            ->all();
+    }
+
+    public function puedePasarA(string $estadoNuevo): bool
+    {
+        return in_array($estadoNuevo, self::transicionesPermitidas()[$this->estado] ?? [], true);
+    }
+
+    /**
      * @var list<string>
      */
     protected $fillable = [
