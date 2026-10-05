@@ -1007,8 +1007,13 @@ class PacienteResource extends Resource
         $altoCosto = (bool) ($data['alto_costo_oncologico'] ?? false);
         unset($data['orden_medica'], $data['alto_costo_oncologico']);
 
+        // FileUpload a veces deja [uuid => ruta] si aún no se deshidrató.
+        if (is_array($orden)) {
+            $orden = collect($orden)->filter(fn ($v) => filled($v))->first();
+        }
+
         return blank($orden) ? null : [
-            'orden_medica' => $orden,
+            'orden_medica' => (string) $orden,
             'alto_costo_oncologico' => $altoCosto,
             'cargado_por' => auth()->id(),
         ];

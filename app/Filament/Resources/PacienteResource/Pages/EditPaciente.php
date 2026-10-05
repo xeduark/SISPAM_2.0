@@ -58,7 +58,15 @@ class EditPaciente extends EditRecord
      */
     public function accionesDeGuardado(): array
     {
-        return [$this->getSaveFormAction()->livewire($this)];
+        return [
+            $this->getSaveFormAction()
+                ->livewire($this)
+                // Evita doble clic mientras Livewire procesa el save.
+                ->extraAttributes([
+                    'wire:loading.attr' => 'disabled',
+                    'wire:target' => 'save',
+                ]),
+        ];
     }
 
     protected function getHeaderActions(): array
