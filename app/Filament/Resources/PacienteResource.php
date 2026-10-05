@@ -453,14 +453,18 @@ class PacienteResource extends Resource
                         // Toma de datos del orientador. Cada carga queda como un soporte del
                         // paciente (ver `guardarSoporte`); el ticket se genera más adelante.
                         Forms\Components\Wizard\Step::make('Orientación')
-                            ->description('Orden médica y alto costo')
+                            ->description('Orden médica y prioridad')
                             ->icon('heroicon-o-document-arrow-up')
                             ->schema([
-                                Forms\Components\Radio::make('alto_costo_oncologico')
-                                    ->label('¿Paciente o medicamento de alto costo / oncológico?')
-                                    ->boolean('Sí', 'No')
-                                    ->inline()
-                                    ->required(),
+                                /*
+                                 * Aquí **no** se pregunta por alto costo.
+                                 *
+                                 * El orientador no conoce los medicamentos —por
+                                 * eso el ticket nace sin ellos— así que tampoco
+                                 * puede clasificarlos. Lo marca farmacia al
+                                 * alistar, con la fórmula a la vista, y sirve
+                                 * solo para identificar el ticket.
+                                 */
                                 // Sin `capture`: en el celular el mismo botón ofrece la cámara
                                 // o los archivos del dispositivo.
                                 Forms\Components\FileUpload::make('orden_medica')
@@ -818,11 +822,16 @@ class PacienteResource extends Resource
                                 Infolists\Components\TextEntry::make('cargadoPor.nombre_completo')
                                     ->label('Cargada por')
                                     ->placeholder('—'),
-                                Infolists\Components\TextEntry::make('alto_costo_oncologico')
+                                // Sale del ticket, no del soporte: lo marca
+                                // farmacia al alistar y ahí es donde vive.
+                                // Mientras no alisten, no hay nada que decir.
+                                Infolists\Components\TextEntry::make('ticket.alto_costo')
                                     ->label('Alto costo u oncológico')
                                     ->badge()
+                                    ->placeholder('Sin alistar')
                                     ->formatStateUsing(fn (bool $state): string => $state ? 'Sí' : 'No')
-                                    ->color(fn (bool $state): string => $state ? 'warning' : 'gray'),
+                                    ->color(fn (bool $state): string => $state ? 'warning' : 'gray')
+                                    ->visible(fn ($record): bool => $record->ticket?->alistado_en !== null),
                                 Infolists\Components\TextEntry::make('orden_medica')
                                     ->hiddenLabel()
                                     ->formatStateUsing(fn (): string => 'Abrir la orden médica')
@@ -1004,12 +1013,11 @@ class PacienteResource extends Resource
     public static function separarSoporte(array &$data): ?array
     {
         $orden = $data['orden_medica'] ?? null;
-        $altoCosto = (bool) ($data['alto_costo_oncologico'] ?? false);
+        // Por si queda en algún formulario viejo: el campo ya no se pregunta.
         unset($data['orden_medica'], $data['alto_costo_oncologico']);
 
         return blank($orden) ? null : [
             'orden_medica' => $orden,
-            'alto_costo_oncologico' => $altoCosto,
             'cargado_por' => auth()->id(),
         ];
     }
@@ -1049,23 +1057,19 @@ class PacienteResource extends Resource
     /**
      * Saca del formulario los datos que son del ticket y no del paciente.
      *
-     * El alto costo se lee del soporte y no de `$data` a propósito:
-     * `separarSoporte()` ya se lo llevó del formulario, así que pedirlo por
-     * parámetro deja la dependencia a la vista y no depende del orden en que
-     * se llamen los dos métodos.
+     * **El alto costo no está aquí**: lo marca farmacia al alistar, que es
+     * quien ve los medicamentos. El ticket nace con la marca en falso.
      *
      * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>|null  $soporte  Lo que devolvió `separarSoporte()`
-     * @return array{alto_costo: bool, prioridad: string, motivo_prioridad: ?string}
+     * @return array{prioridad: string, motivo_prioridad: ?string}
      */
-    public static function separarDatosDelTicket(array &$data, ?array $soporte = null): array
+    public static function separarDatosDelTicket(array &$data): array
     {
         $prioridad = $data['prioridad'] ?? Ticket::PRIORIDAD_NORMAL;
         $motivo = $data['motivo_prioridad'] ?? null;
         unset($data['prioridad'], $data['motivo_prioridad']);
 
         return [
-            'alto_costo' => (bool) ($soporte['alto_costo_oncologico'] ?? $data['alto_costo_oncologico'] ?? false),
             'prioridad' => $prioridad,
             // El motivo solo tiene sentido si es preferencial.
             'motivo_prioridad' => $prioridad === Ticket::PRIORIDAD_PREFERENCIAL ? $motivo : null,

@@ -171,7 +171,7 @@ class PacienteResourceTest extends TestCase
         $this->assertSame(0, Paciente::first()->soportes()->count());
     }
 
-    public function test_el_orientador_debe_cargar_la_orden_medica_y_responder_alto_costo(): void
+    public function test_el_orientador_debe_cargar_la_orden_medica(): void
     {
         $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
         $this->fakeConsultaExitosa();
@@ -179,9 +179,23 @@ class PacienteResourceTest extends TestCase
         $this->confirmarContacto($this->consultar())
             ->assertSee('Orden médica')
             ->call('create')
-            ->assertHasFormErrors(['orden_medica' => 'required', 'alto_costo_oncologico' => 'required']);
+            ->assertHasFormErrors(['orden_medica' => 'required']);
 
         $this->assertDatabaseCount('pacientes', 0);
+    }
+
+    /**
+     * Al orientador no se le pregunta por alto costo: no conoce los
+     * medicamentos. Lo marca farmacia al alistar.
+     */
+    public function test_al_orientador_no_se_le_pregunta_por_alto_costo(): void
+    {
+        $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
+        $this->fakeConsultaExitosa();
+
+        $this->confirmarContacto($this->consultar())
+            ->assertDontSee('alto costo')
+            ->assertDontSee('oncológico');
     }
 
     public function test_la_orden_medica_queda_como_soporte_del_paciente(): void
@@ -191,7 +205,6 @@ class PacienteResourceTest extends TestCase
         $this->fakeConsultaExitosa();
 
         $this->confirmarContacto($this->consultar(), [
-            'alto_costo_oncologico' => true,
             'orden_medica' => UploadedFile::fake()->image('orden.jpg'),
         ])
             ->call('create')
@@ -199,7 +212,9 @@ class PacienteResourceTest extends TestCase
 
         $soporte = Paciente::first()->soportes()->sole();
 
-        $this->assertTrue($soporte->alto_costo_oncologico);
+        // `null` quiere decir «no se preguntó», que es la verdad: la marca la
+        // pone farmacia sobre el ticket, no el orientador sobre el soporte.
+        $this->assertNull($soporte->alto_costo_oncologico);
         $this->assertSame($this->admin->id, $soporte->cargado_por);
         Storage::disk('local')->assertExists($soporte->orden_medica);
     }

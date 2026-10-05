@@ -37,17 +37,20 @@ trait FiltraPorSede
 
         return Forms\Components\Select::make('sede_id')
             ->label('Sede')
-            ->relationship('sede', 'nombre')
             ->default($usuario?->sede_id)
             ->required()
+            // La sede siempre se nombra con su código: «PREMIUM PLAZA (PRP)».
+            // La etiqueta la arma `Sede::etiqueta`, en un solo sitio. Como el
+            // código va dentro de la etiqueta, buscar «PRP» ya la encuentra.
             ->searchable()
             ->preload()
             // Quien no es administrador trabaja en su sede y no puede moverlo.
             ->disabled(! $esAdministrador)
             ->dehydrated()
             ->helperText($esAdministrador ? null : 'Tu sede. Solo un administrador puede cambiarla.')
-            ->options(fn (): array => $esAdministrador
-                ? Sede::orderBy('nombre')->pluck('nombre', 'id')->all()
-                : Sede::whereKey($usuario?->sede_id)->pluck('nombre', 'id')->all());
+            ->options(fn (): array => Sede::opciones($esAdministrador
+                ? Sede::orderBy('nombre')->get()
+                : Sede::whereKey($usuario?->sede_id)->get()))
+            ->getOptionLabelUsing(fn ($value): ?string => Sede::find($value)?->etiqueta);
     }
 }

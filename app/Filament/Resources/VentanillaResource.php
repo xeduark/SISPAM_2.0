@@ -70,6 +70,7 @@ class VentanillaResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede')
+                    ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—')
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('nombre')
@@ -88,7 +89,7 @@ class VentanillaResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('sede_id')
                     ->label('Sede')
-                    ->options(fn (): array => Sede::orderBy('nombre')->pluck('nombre', 'id')->all())
+                    ->options(fn (): array => Sede::opciones())
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 Tables\Filters\TernaryFilter::make('activa')
                     ->label('Estado')

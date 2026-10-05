@@ -20,6 +20,6 @@ trait ControlaPermisos
             default => 'editar',
         };
 
-        return (bool) auth()->user()?->puede(static::$modulo . '.' . $accion);
+        return (bool) auth()->user()?->puede(static::$modulo.'.'.$accion);
     }
 }

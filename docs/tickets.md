@@ -23,11 +23,11 @@ Migraciones nuevas:
 
 | | Ejemplo | Para qué |
 |---|---|---|
-| `numero` | `SP-LA30-20261003-A023` | **Único en todo el sistema.** Es lo que busca el módulo de entrega |
-| `turno` | `A-023` | Corto, por sede y día. Es lo que se le dice al paciente y lo que sale en la pantalla de la sala |
+| `numero` | `TK-PRP-261005-0060` | **Único en todo el sistema.** Es lo que busca el módulo de entrega |
+| `turno` | `0060` | Corto, por sede y día. Es lo que se le dice al paciente y lo que sale en la pantalla de la sala |
 
-El número lleva dentro la sede y la fecha, así que **el mismo turno `A-023`
-puede existir hoy en La 30 y en BIC sin chocar**. Por eso el contrato con
+El número lleva dentro la sede y la fecha, así que **el mismo turno `0060`
+puede existir hoy en LA 30 y en EDIFICIO BIC sin chocar**. Por eso el contrato con
 entrega (`buscarPorNumero($numero)`) sigue sirviendo sin cambios.
 
 ## Cómo nace
@@ -36,19 +36,21 @@ entrega (`buscarPorNumero($numero)`) sigue sirviendo sin cambios.
 El orientador registra al paciente
         │
         ├── carga la orden médica  ──► soportes
-        ├── marca alto costo / oncológico
         └── marca la prioridad
                  │
                  ▼
         GenerarTicket
                  │
-                 ├── escoge la cola:  alto costo → la cola marcada
-                 │                    si no      → la general
-                 ├── pide el turno:   GeneradorDeTurnos
+                 ├── escoge la cola:  la general de la sede
+                 ├── pide el turno:   GeneradorDeTurnos (por sede y día)
                  └── arma el número
                           │
                           ▼
-               Ticket en estado «generado», SIN medicamentos
+    Ticket «generado», SIN medicamentos y SIN marca de alto costo
+                          │
+                          ▼
+              Farmacia alista: captura los medicamentos
+              y marca si es de alto costo u oncológico
 ```
 
 **El ticket nace sin medicamentos a propósito**: los captura farmacia al
@@ -90,13 +92,37 @@ son adulto mayor, gestante, discapacidad y otro.
 > El umbral de 60 años está en `Ticket::EDAD_ADULTO_MAYOR`. Conviene
 > confirmarlo con quien defina la política de atención preferencial.
 
-## Qué cola le toca
+## El alto costo lo marca farmacia
 
-Lo decide `colas.atiende_alto_costo`, **no el prefijo**: así se reconfigura
-por sede desde Administración → Colas sin tocar código.
+**Y no el orientador.** El orientador no conoce los medicamentos —por eso el
+ticket nace sin ellos— así que tampoco está en condiciones de clasificarlos.
+Pedirle esa respuesta era pedirle que adivinara, y encima nada la corregía
+después: se escribía una sola vez, al crear el ticket.
 
-Si la sede no tiene cola de alto costo marcada, el ticket va a la general: el
-paciente igual se atiende.
+Ahora la pone farmacia al alistar, con la fórmula a la vista, y sirve **solo
+para identificar** el ticket:
+
+- **No decide cola.** Todos nacen en la general de la sede.
+- **No decide turno.** Para cuando se marca, el paciente ya tiene su número.
+- Sale como etiqueta en el listado y la ficha de Tickets, y le llega al módulo
+  de entrega por el DTO. De hecho entrega mejora: antes recibía la suposición
+  del orientador, ahora recibe lo que farmacia verificó.
+- Queda en la auditoría: `alto_costo` está en `Ticket::CAMPOS_AUDITADOS`, así
+  que se sabe quién la marcó y cuándo.
+
+Las colas «Alto costo y oncológicos» quedaron **desactivadas** en todas las
+sedes (`2026_10_06_130000_alto_costo_lo_marca_farmacia`): si nada enruta hacia
+ellas, estarían vacías para siempre y solo confundirían. Se desactivan, no se
+borran, así que se reactivan desde la pantalla si algún día se vuelve a separar
+la fila.
+
+`colas.atiende_alto_costo` sigue en la tabla, pero ya no enruta nada: solo dice
+cuál era la cola de alto costo de cada sede.
+
+> **Pendiente conocido:** un ticket ya `listo` no se puede volver a alistar
+> (`sePuedeAlistar()` solo admite `generado` y `en_alistamiento`), así que
+> corregir la marca —o los medicamentos— exige devolverlo a `en_alistamiento`,
+> y la pantalla todavía no ofrece cómo.
 
 ## Si la sede no está configurada
 
@@ -149,14 +175,18 @@ Llamar, volver a llamar y marcar ausentes se hace en **Llamar turnos**, y lo
 que ve el paciente es la pantalla pública de la sala. Detalle:
 `docs/llamado-de-turnos.md`.
 
-## Pendiente
+## El cierre del día
 
-- **Cierre del día:** marcar como `vencido` lo que nadie atendió.
+`php artisan tickets:cerrar-dia` marca como `vencido` lo que nadie alcanzó a
+atender en días pasados: `generado`, `en_alistamiento` y `listo`. **`parcial`
+no vence** —ese paciente sí fue atendido y le quedaron faltantes que vuelve a
+reclamar—. Detalle: `docs/cierre-del-dia.md`.
 
 ## Pruebas
 
 ```bash
 php artisan test --filter=TicketTest
+php artisan test --filter=CierreDelDiaTest
 ```
 
 El llamado del turno se prueba aparte, en `LlamadoDeTurnosTest`.

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\PacienteResource\Concerns;
 
 use App\Models\Paciente;
 use App\Services\Tickets\GenerarTicket;
+use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
 use RuntimeException;
 
@@ -17,7 +18,7 @@ trait GeneraTicketDeLaVisita
 {
     /**
      * @param  array<string, mixed>  $soporte  La orden médica ya separada del formulario
-     * @param  array{alto_costo: bool, prioridad: string, motivo_prioridad: ?string}  $datosTicket
+     * @param  array{prioridad: string, motivo_prioridad: ?string}  $datosTicket
      */
     protected function generarTicketDeLaVisita(Paciente $paciente, array $soporte, array $datosTicket): void
     {
@@ -44,11 +45,24 @@ trait GeneraTicketDeLaVisita
 
         $paciente->soportes()->create($soporte + ['ticket_id' => $ticket->getKey()]);
 
-        Notification::make()
+        $aviso = Notification::make()
             ->title("Ticket {$ticket->turno} generado")
             ->body("Número {$ticket->numero}. Farmacia lo alista y queda listo para entrega.")
             ->success()
-            ->persistent()
-            ->send();
+            ->persistent();
+
+        // El papel que se lleva el paciente. Se abre en otra pestaña para no
+        // perder la ficha que se acaba de guardar.
+        if ($usuario->puede('tickets.imprimir')) {
+            $aviso->actions([
+                Action::make('imprimir')
+                    ->label('Imprimir ticket')
+                    ->icon('heroicon-m-printer')
+                    ->url(route('tickets.imprimir', $ticket), shouldOpenInNewTab: true)
+                    ->close(),
+            ]);
+        }
+
+        $aviso->send();
     }
 }

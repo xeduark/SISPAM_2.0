@@ -6,8 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Último turno entregado por una cola en un día. Lo maneja
+ * Último turno entregado por una sede en un día. Lo maneja
  * `App\Services\Turnos\GeneradorDeTurnos`; no se toca a mano.
+ *
+ * Cuenta la **sede**, no la cola: desde que el turno es solo el consecutivo
+ * («0060»), dos colas contando aparte sacarían el mismo número el mismo día.
  */
 class ContadorTurno extends Model
 {
@@ -17,7 +20,7 @@ class ContadorTurno extends Model
      * @var list<string>
      */
     protected $fillable = [
-        'cola_id',
+        'sede_id',
         'fecha',
         'ultimo',
     ];
@@ -31,10 +34,10 @@ class ContadorTurno extends Model
     }
 
     /**
-     * @return BelongsTo<Cola, $this>
+     * @return BelongsTo<Sede, $this>
      */
-    public function cola(): BelongsTo
+    public function sede(): BelongsTo
     {
-        return $this->belongsTo(Cola::class);
+        return $this->belongsTo(Sede::class);
     }
 }

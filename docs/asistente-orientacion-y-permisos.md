@@ -8,7 +8,7 @@ para el equipo de desarrollo de SISPAM y para quien configure Authentik.
 | Cambio | Qué resuelve |
 |---|---|
 | Formulario de pacientes por pasos (wizard) | El formulario largo de Savia queda en 5 pasos que se validan uno a uno. |
-| Paso **Orientación** | El orientador carga la orden médica (foto o archivo) e indica si es de alto costo u oncológico. |
+| Paso **Orientación** | El orientador carga la orden médica (foto o archivo) y marca la prioridad. El alto costo lo marca farmacia al alistar. |
 | Tabla `soportes` | Cada orden médica queda ligada al paciente. Más adelante se le ligará el ticket. |
 | Matriz de permisos por módulo | Cada rol (grupo de Authentik) tiene acciones por módulo. |
 | Administrador en SISPAM | El administrador ve todo y es el único que edita la matriz. |
@@ -46,7 +46,7 @@ librerías nuevas, y respeta la paleta institucional del panel.
 | 2. Ubicación y contacto | Teléfonos, ciudad, dirección, barrio, indicaciones de entrega y la casilla de confirmación. También la residencia según Savia. |
 | 3. Afiliación | Estado de la afiliación, IPS y portabilidad, núcleo familiar. |
 | 4. Caracterización | Condición de salud, Sisbén, programas y RIAS, otros datos de Savia, observación. |
-| 5. Orientación | Pregunta de alto costo u oncológico y la orden médica. Solo aparece con permiso `orientacion.usar`. |
+| 5. Orientación | La orden médica y la prioridad. Solo aparece con permiso `orientacion.usar`. |
 
 Comportamiento:
 
@@ -64,15 +64,25 @@ Cómo funciona por dentro: los botones del último paso se pintan con la vista
 vista se evalúa al renderizar. Por eso las reglas que ocultan los botones se
 aplican con el resultado de la consulta a Savia ya cargado.
 
-## 2. Orientación: orden médica y alto costo
+## 2. Orientación: orden médica y prioridad
 
 Este paso solo lo ve quien tenga el permiso `orientacion.usar`, además de los
 administradores.
 
 | Campo | Regla |
 |---|---|
-| ¿Paciente o medicamento de alto costo / oncológico? | Sí / No, obligatorio. |
 | Orden médica | JPG, PNG, WEBP o PDF de máximo 10 MB. Es obligatoria al **registrar** un paciente y opcional al **editar**. |
+| Prioridad en la fila | Normal o preferencial; se **sugiere** con los datos de Savia pero el orientador decide. |
+
+**Aquí no se pregunta por alto costo.** Se preguntaba, y se quitó: el
+orientador no conoce los medicamentos —por eso el ticket nace sin ellos— así
+que tampoco puede clasificarlos. Lo marca **farmacia al alistar**, con la
+fórmula a la vista, y sirve solo para identificar el ticket. Ver
+`docs/tickets.md`.
+
+Por eso `soportes.alto_costo_oncologico` quedó **nullable**: en los soportes
+nuevos vale `null`, que quiere decir «no se preguntó». Lo que respondieron los
+orientadores hasta ahora se conserva.
 
 - **Cámara o archivo:** en el celular, el mismo botón ofrece la cámara o los
   archivos del dispositivo. No se usa el atributo `capture`, porque obligaría
@@ -81,8 +91,8 @@ administradores.
   `storage/app/private/soportes/ordenes-medicas`. Nunca se guardan en `public`,
   porque son datos de salud.
 - **Registro:** cada carga crea una fila en `soportes` con `paciente_id`,
-  `orden_medica`, `alto_costo_oncologico`, `cargado_por` y fechas. Esto lo
-  hace `PacienteResource::separarSoporte()`.
+  `orden_medica`, `cargado_por` y fechas. Esto lo hace
+  `PacienteResource::separarSoporte()`.
 - **Pacientes que ya existían:** si el documento ya estaba registrado, el
   flujo de registro actualiza ese paciente y le suma el soporte.
 
@@ -91,9 +101,8 @@ sección **Órdenes médicas** lleva a `soportes/{soporte}/orden-medica`. Exige
 sesión y el permiso `orientacion.ver_orden`, sirve el archivo desde el disco
 privado y **cada acceso queda en la auditoría**. Ver `docs/auditoria.md`.
 
-**Pendiente**, se hará junto con la vista del ticket:
-
-- La generación del ticket (fase 4 del núcleo).
+La generación del ticket se hace desde aquí: cargar una orden médica abre una
+visita. Detalle en `docs/tickets.md`.
 
 ## 3. Roles y matriz de permisos
 

@@ -34,6 +34,9 @@ class Auditoria extends Model
 
     public const ACCION_DESCARGO_ORDEN = 'descargo_orden';
 
+    /** El cierre del día venció los tickets que nadie alcanzó a atender. */
+    public const ACCION_CERRO_DIA = 'cerro_dia';
+
     /** Etiquetas en español para mostrar la acción en pantalla. */
     public const ACCIONES = [
         self::ACCION_INGRESO => 'Ingresó',
@@ -43,6 +46,7 @@ class Auditoria extends Model
         self::ACCION_ELIMINO => 'Eliminó',
         self::ACCION_CONSULTO_SAVIA => 'Consultó en Savia',
         self::ACCION_DESCARGO_ORDEN => 'Abrió una orden médica',
+        self::ACCION_CERRO_DIA => 'Cerró el día',
     ];
 
     /** Color del badge por acción, dentro de la paleta institucional. */
@@ -54,6 +58,7 @@ class Auditoria extends Model
         self::ACCION_ELIMINO => 'danger',
         self::ACCION_CONSULTO_SAVIA => 'info',
         self::ACCION_DESCARGO_ORDEN => 'warning',
+        self::ACCION_CERRO_DIA => 'warning',
     ];
 
     /** Se escribe una vez y queda; por eso no hay `updated_at`. */
@@ -90,6 +95,11 @@ class Auditoria extends Model
      * Nunca interrumpe lo que el usuario estaba haciendo: si el registro
      * falla, la operación de negocio sigue su curso.
      *
+     * `$sedeId` es la sede del hecho. Casi siempre es la del usuario y se
+     * deduce sola; se pasa a mano cuando lo que se registra no pasa en la sede
+     * de quien lo ejecuta —el cierre del día, por ejemplo, que lo corre una
+     * tarea programada sin usuario y cierra sede por sede.
+     *
      * @param  array<string, array{0: mixed, 1: mixed}>|null  $cambios
      */
     public static function registrar(
@@ -99,6 +109,7 @@ class Auditoria extends Model
         ?int $entidadId = null,
         ?array $cambios = null,
         ?User $usuario = null,
+        ?int $sedeId = null,
     ): ?self {
         try {
             $usuario ??= auth()->user();
@@ -107,7 +118,7 @@ class Auditoria extends Model
                 'usuario_id' => $usuario?->getKey(),
                 'usuario_nombre' => $usuario?->nombre_completo ?? 'Sistema',
                 'usuario_documento' => $usuario?->documento,
-                'sede_id' => $usuario?->sede_id,
+                'sede_id' => $sedeId ?? $usuario?->sede_id,
                 'accion' => $accion,
                 'entidad_tipo' => $entidadTipo,
                 'entidad_id' => $entidadId,

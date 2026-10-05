@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthentikController;
 use App\Http\Controllers\OrdenMedicaController;
 use App\Http\Controllers\SalaController;
+use App\Http\Controllers\TicketImpresionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect('/admin'));
@@ -13,6 +14,15 @@ Route::get('/', fn () => redirect('/admin'));
  */
 Route::middleware('auth')->get('/soportes/{soporte}/orden-medica', [OrdenMedicaController::class, 'mostrar'])
     ->name('soportes.orden-medica');
+
+/*
+ * El ticket impreso que se lleva el paciente. Exige sesión y el permiso
+ * `tickets.imprimir` —aparte de `tickets.ver`, porque el orientador genera el
+ * ticket pero no entra al listado—, y solo deja imprimir lo de la sede propia.
+ * Nunca sale nada del paciente ni de su salud. Ver `TicketImpresionController`.
+ */
+Route::middleware('auth')->get('/tickets/{ticket}/imprimir', [TicketImpresionController::class, 'mostrar'])
+    ->name('tickets.imprimir');
 
 /*
  * Pantalla de la sala de espera. Es **pública a propósito**: el televisor de la

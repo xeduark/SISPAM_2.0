@@ -2,14 +2,15 @@
 
 namespace Tests\Feature\Entrega;
 
+use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Filament\Resources\EntregaResource;
 use App\Models\Entrega;
 use App\Models\Paciente;
 use App\Models\Rol;
-use App\Models\Sede;
 use App\Models\User;
 use App\Services\Entrega\RegistrarEntrega;
 use App\Services\Entrega\SaldoTicket;
+use App\Services\Ticket\TicketConsultaMock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -87,9 +88,13 @@ class DispensadorAccesoTest extends TestCase
 
     public function test_saldo_nunca_supera_cantidad_original_del_ticket(): void
     {
+        // Esta prueba es sobre la aritmética del saldo, no sobre de dónde sale el
+        // ticket: el mock da tres líneas parejas y evita montar todo el alistamiento.
+        $this->app->bind(TicketConsultaInterface::class, TicketConsultaMock::class);
+
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
-        $ticket = app(\App\Contracts\Ticket\TicketConsultaInterface::class)->buscarPorNumero('T-SALDO');
+        $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SALDO');
         $original = (float) $ticket->items[0]->cantidad;
 
         app(RegistrarEntrega::class)->handle($ticket, $usuario, [

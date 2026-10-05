@@ -40,7 +40,7 @@ class TicketTest extends TestCase
     {
         parent::setUp();
 
-        $this->sede = Sede::factory()->create(['nombre' => 'La 30', 'codigo' => 'LA30']);
+        $this->sede = Sede::factory()->create(['nombre' => 'LA 30', 'codigo' => 'L30']);
 
         $this->general = Cola::factory()->create([
             'sede_id' => $this->sede->id,
@@ -97,20 +97,20 @@ class TicketTest extends TestCase
     {
         $ticket = $this->generar();
 
-        $esperado = 'SP-LA30-'.now()->format('Ymd').'-A001';
+        $esperado = 'TK-L30-'.now()->format('ymd').'-0001';
 
         $this->assertSame($esperado, $ticket->numero);
-        $this->assertSame('A-001', $ticket->turno);
+        $this->assertSame('0001', $ticket->turno);
 
         // El segundo no repite ni número ni turno.
         $segundo = $this->generar();
-        $this->assertSame('SP-LA30-'.now()->format('Ymd').'-A002', $segundo->numero);
-        $this->assertSame('A-002', $segundo->turno);
+        $this->assertSame('TK-L30-'.now()->format('ymd').'-0002', $segundo->numero);
+        $this->assertSame('0002', $segundo->turno);
     }
 
     public function test_el_turno_se_repite_entre_sedes_pero_el_numero_no(): void
     {
-        $bic = Sede::factory()->create(['nombre' => 'BIC', 'codigo' => 'BIC']);
+        $bic = Sede::factory()->create(['nombre' => 'EDIFICIO BIC', 'codigo' => 'BIC']);
         Cola::factory()->create(['sede_id' => $bic->id, 'prefijo' => 'A', 'atiende_alto_costo' => false]);
 
         $enLa30 = $this->generar();
@@ -121,36 +121,42 @@ class TicketTest extends TestCase
         );
 
         // El paciente ve el mismo turno en las dos sedes...
-        $this->assertSame('A-001', $enLa30->turno);
-        $this->assertSame('A-001', $enBic->turno);
+        $this->assertSame('0001', $enLa30->turno);
+        $this->assertSame('0001', $enBic->turno);
 
         // ...pero el número que busca entrega es distinto.
         $this->assertNotSame($enLa30->numero, $enBic->numero);
-        $this->assertStringContainsString('LA30', $enLa30->numero);
+        $this->assertStringContainsString('L30', $enLa30->numero);
         $this->assertStringContainsString('BIC', $enBic->numero);
     }
 
-    public function test_el_alto_costo_va_a_su_cola_y_el_resto_a_la_general(): void
+    /**
+     * El alto costo ya no manda a otra cola: lo marca farmacia al alistar,
+     * cuando el turno ya se entregó. Todos nacen en la general.
+     */
+    public function test_todos_nacen_en_la_cola_general_y_sin_marca_de_alto_costo(): void
     {
-        $corriente = $this->generar(['alto_costo' => false]);
-        $oncologico = $this->generar(['alto_costo' => true]);
+        $primero = $this->generar();
+        $segundo = $this->generar();
 
-        $this->assertSame($this->general->id, $corriente->cola_id);
-        $this->assertSame('A-001', $corriente->turno);
+        $this->assertSame($this->general->id, $primero->cola_id);
+        $this->assertSame($this->general->id, $segundo->cola_id);
 
-        $this->assertSame($this->altoCosto->id, $oncologico->cola_id);
-        $this->assertSame('B-001', $oncologico->turno);
-        $this->assertTrue($oncologico->alto_costo);
+        $this->assertSame('0001', $primero->turno);
+        $this->assertSame('0002', $segundo->turno);
+
+        // La marca la pone farmacia: aquí todavía no se sabe.
+        $this->assertFalse($primero->alto_costo);
     }
 
-    public function test_si_la_sede_no_tiene_cola_de_alto_costo_usa_la_general(): void
+    /** Si solo queda activa la de alto costo, el paciente se atiende igual. */
+    public function test_si_no_hay_cola_general_usa_la_que_haya(): void
     {
-        $this->altoCosto->delete();
+        $this->general->update(['activa' => false]);
 
-        $ticket = $this->generar(['alto_costo' => true]);
+        $ticket = $this->generar();
 
-        $this->assertSame($this->general->id, $ticket->cola_id);
-        $this->assertTrue($ticket->alto_costo);
+        $this->assertSame($this->altoCosto->id, $ticket->cola_id);
     }
 
     public function test_una_sede_sin_colas_activas_avisa_con_un_mensaje_claro(): void
@@ -196,6 +202,64 @@ class TicketTest extends TestCase
         $this->assertSame($farmaceutico->id, $ticket->alistado_por);
         $this->assertNotNull($ticket->alistado_en);
         $this->assertSame('ACETAMINOFEN 500 MG', $ticket->items()->orderBy('id')->first()->nombre);
+    }
+
+    /**
+     * El alto costo lo marca farmacia, que es quien ve los medicamentos. Al
+     * orientador no se le pregunta porque no está en condiciones de saberlo.
+     */
+    public function test_farmacia_marca_el_alto_costo_al_alistar(): void
+    {
+        $ticket = $this->generar();
+        $farmaceutico = $this->farmaceutico();
+
+        // Nace sin marca: en ese momento no se conocían los medicamentos.
+        $this->assertFalse($ticket->alto_costo);
+
+        app(AlistarTicket::class)->handle($ticket, $farmaceutico, [
+            ['codigo' => 'MED-900', 'nombre' => 'IMATINIB 400 MG', 'cantidad' => 30, 'unidad' => 'TAB'],
+        ], altoCosto: true);
+
+        $this->assertTrue($ticket->refresh()->alto_costo);
+    }
+
+    /** Es una etiqueta, no un enrutamiento: ni el turno ni la cola se mueven. */
+    public function test_marcar_alto_costo_no_cambia_el_turno_ni_la_cola(): void
+    {
+        $ticket = $this->generar();
+        $cola = $ticket->cola_id;
+        $turno = $ticket->turno;
+
+        app(AlistarTicket::class)->handle($ticket, $this->farmaceutico(), [
+            ['codigo' => 'MED-900', 'nombre' => 'IMATINIB 400 MG', 'cantidad' => 30],
+        ], altoCosto: true);
+
+        $ticket->refresh();
+
+        $this->assertSame($cola, $ticket->cola_id);
+        $this->assertSame($turno, $ticket->turno);
+    }
+
+    /**
+     * Alistar de nuevo vuelve a escribir la marca, igual que los medicamentos.
+     *
+     * Ojo: un ticket ya `listo` **no se puede volver a alistar**
+     * (`sePuedeAlistar()` solo admite `generado` y `en_alistamiento`), así que
+     * hoy corregir la marca exige devolverlo a `en_alistamiento` a mano. Es la
+     * misma limitación que ya tenían los medicamentos.
+     */
+    public function test_la_marca_de_alto_costo_se_vuelve_a_escribir_al_realistar(): void
+    {
+        $ticket = $this->generar();
+        $farmaceutico = $this->farmaceutico();
+        $medicamentos = [['codigo' => 'MED-900', 'nombre' => 'IMATINIB 400 MG', 'cantidad' => 30]];
+
+        app(AlistarTicket::class)->handle($ticket, $farmaceutico, $medicamentos, altoCosto: true);
+        $this->assertTrue($ticket->refresh()->alto_costo);
+
+        $ticket->update(['estado' => Ticket::ESTADO_EN_ALISTAMIENTO]);
+        app(AlistarTicket::class)->handle($ticket, $farmaceutico, $medicamentos, altoCosto: false);
+        $this->assertFalse($ticket->refresh()->alto_costo);
     }
 
     public function test_volver_a_alistar_reemplaza_los_medicamentos_sin_duplicar(): void
@@ -281,7 +345,7 @@ class TicketTest extends TestCase
     {
         $delaSede = $this->generar();
 
-        $bic = Sede::factory()->create(['nombre' => 'BIC', 'codigo' => 'BIC']);
+        $bic = Sede::factory()->create(['nombre' => 'EDIFICIO BIC', 'codigo' => 'BIC']);
         $deOtraSede = Ticket::factory()->create(['sede_id' => $bic->id]);
 
         $this->actingAs($this->farmaceutico());
@@ -408,7 +472,6 @@ class TicketTest extends TestCase
 
         $pagina->fillForm([
             'contacto_confirmado' => true,
-            'alto_costo_oncologico' => true,
             'orden_medica' => UploadedFile::fake()->image('orden.jpg'),
             'prioridad' => Ticket::PRIORIDAD_PREFERENCIAL,
             'motivo_prioridad' => 'adulto_mayor',
@@ -419,10 +482,10 @@ class TicketTest extends TestCase
         $paciente = Paciente::where('numero_documento', '1017234567')->firstOrFail();
         $ticket = $paciente->tickets()->sole();
 
-        // Por ser de alto costo, fue a la cola B.
-        $this->assertSame($this->altoCosto->id, $ticket->cola_id);
-        $this->assertSame('B-001', $ticket->turno);
-        $this->assertTrue($ticket->alto_costo);
+        // Nace en la general y sin marca: eso lo decide farmacia al alistar.
+        $this->assertSame($this->general->id, $ticket->cola_id);
+        $this->assertSame('0001', $ticket->turno);
+        $this->assertFalse($ticket->alto_costo);
         $this->assertTrue($ticket->esPreferencial());
         $this->assertSame('adulto_mayor', $ticket->motivo_prioridad);
         $this->assertSame(Ticket::ESTADO_GENERADO, $ticket->estado);

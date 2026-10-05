@@ -111,7 +111,7 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
         ]);
 
         $soporte = PacienteResource::separarSoporte($data);
-        $datosTicket = PacienteResource::separarDatosDelTicket($data, $soporte);
+        $datosTicket = PacienteResource::separarDatosDelTicket($data);
 
         $paciente->fill($data)->save();
 

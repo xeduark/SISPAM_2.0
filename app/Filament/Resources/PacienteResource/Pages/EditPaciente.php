@@ -33,7 +33,7 @@ class EditPaciente extends EditRecord
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         $soporte = PacienteResource::separarSoporte($data);
-        $datosTicket = PacienteResource::separarDatosDelTicket($data, $soporte);
+        $datosTicket = PacienteResource::separarDatosDelTicket($data);
 
         $record->update($data);
 

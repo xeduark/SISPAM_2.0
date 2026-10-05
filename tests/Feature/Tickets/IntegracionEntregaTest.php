@@ -36,7 +36,7 @@ class IntegracionEntregaTest extends TestCase
     {
         parent::setUp();
 
-        $this->sede = Sede::factory()->create(['nombre' => 'La 30', 'codigo' => 'LA30']);
+        $this->sede = Sede::factory()->create(['nombre' => 'LA 30', 'codigo' => 'L30']);
         Cola::factory()->create([
             'sede_id' => $this->sede->id,
             'prefijo' => 'A',
@@ -136,7 +136,7 @@ class IntegracionEntregaTest extends TestCase
     {
         $ticket = $this->ticketListo();
 
-        // En el mostrador el paciente muestra «A-001», no el número largo.
+        // En el mostrador el paciente muestra «0001», no el número largo.
         $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->turno);
 
         $this->assertNotNull($dto);
@@ -160,7 +160,7 @@ class IntegracionEntregaTest extends TestCase
 
     public function test_no_se_atiende_un_ticket_de_otra_sede(): void
     {
-        $bic = Sede::factory()->create(['nombre' => 'BIC', 'codigo' => 'BIC']);
+        $bic = Sede::factory()->create(['nombre' => 'EDIFICIO BIC', 'codigo' => 'BIC']);
         Cola::factory()->create(['sede_id' => $bic->id, 'prefijo' => 'A', 'atiende_alto_costo' => false]);
 
         $deOtraSede = $this->ticketListo(null, $bic);
@@ -200,6 +200,8 @@ class IntegracionEntregaTest extends TestCase
 
         app(RegistrarEntrega::class)->handle($dto, $this->dispensador, [
             'tipo' => Entrega::TIPO_PRESENCIAL,
+            'receptor_nombre' => 'PACIENTE DE PRUEBA',
+            'receptor_documento' => '1017234567',
             'firma_contenido' => 'firma-bytes',
             'items' => collect($dto->items)->map(fn ($item): array => [
                 'ticket_item_id' => $item->id,
@@ -226,6 +228,8 @@ class IntegracionEntregaTest extends TestCase
 
         app(RegistrarEntrega::class)->handle($dto, $this->dispensador, [
             'tipo' => Entrega::TIPO_PRESENCIAL,
+            'receptor_nombre' => 'PACIENTE DE PRUEBA',
+            'receptor_documento' => '1017234567',
             'firma_contenido' => 'firma-bytes',
             'items' => collect($dto->items)->values()->map(fn ($item, int $i): array => [
                 'ticket_item_id' => $item->id,

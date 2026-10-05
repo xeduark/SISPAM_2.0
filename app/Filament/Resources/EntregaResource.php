@@ -75,7 +75,9 @@ class EntregaResource extends Resource
                 Infolists\Components\TextEntry::make('ticket_numero')->label('Ticket'),
                 Infolists\Components\TextEntry::make('tipo')->badge(),
                 Infolists\Components\TextEntry::make('estado')->badge(),
-                Infolists\Components\TextEntry::make('sede.nombre')->label('Sede de atención'),
+                Infolists\Components\TextEntry::make('sede.nombre')
+                    ->label('Sede de atención')
+                    ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—'),
                 Infolists\Components\TextEntry::make('usuario.nombre_completo')->label('Atendido por'),
                 Infolists\Components\TextEntry::make('created_at')->label('Fecha')->dateTime('d/m/Y H:i'),
             ])->columns(3),
@@ -114,6 +116,7 @@ class EntregaResource extends Resource
                 Tables\Columns\TextColumn::make('paciente.nombre_completo')->label('Paciente')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede de atención')
+                    ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—')
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('tipo')

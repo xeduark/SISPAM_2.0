@@ -22,10 +22,10 @@ class TicketFactory extends Factory
     public function definition(): array
     {
         $consecutivo = fake()->unique()->numberBetween(1, 9999);
-        $sufijo = str_pad((string) $consecutivo, 3, '0', STR_PAD_LEFT);
+        $sufijo = str_pad((string) $consecutivo, 4, '0', STR_PAD_LEFT);
 
         return [
-            'numero' => 'SP-TEST-'.now()->format('Ymd').'-A'.$sufijo,
+            'numero' => 'TK-TEST-'.now()->format('ymd').'-A'.$sufijo,
             'turno' => 'A-'.$sufijo,
             'fecha' => now()->toDateString(),
             'paciente_id' => Paciente::factory(),

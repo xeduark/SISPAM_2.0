@@ -78,6 +78,7 @@ class AuditoriaResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede')
+                    ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—')
                     ->placeholder('—')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('accion')
@@ -104,7 +105,7 @@ class AuditoriaResource extends Resource
                     ->multiple(),
                 Tables\Filters\SelectFilter::make('sede_id')
                     ->label('Sede')
-                    ->options(fn (): array => Sede::orderBy('nombre')->pluck('nombre', 'id')->all()),
+                    ->options(fn (): array => Sede::opciones()),
                 Tables\Filters\SelectFilter::make('entidad_tipo')
                     ->label('Sobre qué')
                     ->options(fn (): array => Auditoria::query()
@@ -165,6 +166,7 @@ class AuditoriaResource extends Resource
                             ->placeholder('—'),
                         Infolists\Components\TextEntry::make('sede.nombre')
                             ->label('Sede')
+                            ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—')
                             ->placeholder('—'),
                         Infolists\Components\TextEntry::make('ip')
                             ->label('Dirección IP')

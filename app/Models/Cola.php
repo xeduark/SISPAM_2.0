@@ -10,7 +10,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Cola de atención de una sede. El prefijo arma el turno que ve el paciente.
+ * Cola de atención de una sede.
+ *
+ * **El prefijo ya no arma el turno.** Desde que el turno es solo el
+ * consecutivo («0060»), el prefijo queda como etiqueta corta de la cola: es lo
+ * que distingue «Dispensación general (A)» de «Alto costo y oncológicos (B)»
+ * en el filtro de Llamar turnos. Quién numera es la sede, no la cola; ver
+ * `App\Services\Turnos\GeneradorDeTurnos`.
  */
 class Cola extends Model
 {
@@ -44,14 +50,6 @@ class Cola extends Model
         ];
     }
 
-    /**
-     * El turno tal como se le muestra al paciente: «A-023».
-     */
-    public function formatearTurno(int $consecutivo): string
-    {
-        return $this->prefijo.'-'.str_pad((string) $consecutivo, 3, '0', STR_PAD_LEFT);
-    }
-
     public function descripcionParaAuditoria(): string
     {
         return "la cola «{$this->nombre}» de {$this->sede?->nombre}";
@@ -66,10 +64,16 @@ class Cola extends Model
     }
 
     /**
-     * @return HasMany<ContadorTurno, $this>
+     * Los tickets que salieron por esta cola.
+     *
+     * Es lo que dice si ya se usó. Antes se miraba `contadores_turno`, pero
+     * ese contador pasó a ser de la sede: una cola recién creada en una sede
+     * que ya atendió hoy aparecería como usada sin haber entregado nada.
+     *
+     * @return HasMany<Ticket, $this>
      */
-    public function contadores(): HasMany
+    public function tickets(): HasMany
     {
-        return $this->hasMany(ContadorTurno::class);
+        return $this->hasMany(Ticket::class);
     }
 }

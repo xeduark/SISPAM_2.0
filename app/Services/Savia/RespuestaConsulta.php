@@ -161,7 +161,7 @@ class RespuestaConsulta
             return [
                 'tono' => 'error',
                 'titulo' => "HTTP {$this->httpCode}",
-                'detalle' => $http[$this->httpCode],
+                'detalle' => $http[$this->httpCode].$this->loQueDijoElServicio(),
             ];
         }
 
@@ -174,6 +174,28 @@ class RespuestaConsulta
             'titulo' => 'Respuesta no reconocida',
             'detalle' => "HTTP {$this->httpCode}. El cuerpo no corresponde a la estructura documentada.",
         ];
+    }
+
+    /**
+     * Lo que respondió el servicio, para pegarlo al detalle de un error.
+     *
+     * Ante un 401 Savia distingue «Token inválido» de cualquier otra falla, y
+     * esa diferencia es justo la que dice si hay que revisar las credenciales
+     * o pedirle a Savia que autorice la IP. Sin esto, el mensaje de la app
+     * manda a revisar lo que no es.
+     *
+     * Solo se usa en respuestas de error, donde el cuerpo es un aviso del
+     * servicio y no datos del afiliado, y se recorta por si acaso.
+     */
+    private function loQueDijoElServicio(): string
+    {
+        if ($this->httpCode === 200) {
+            return '';
+        }
+
+        $texto = trim(strip_tags($this->crudo));
+
+        return $texto === '' ? '' : ' El servicio respondió: «'.mb_substr($texto, 0, 200).'».';
     }
 
     /** Campos que el servicio devolvió y que la V3 no documenta. */
