@@ -23,6 +23,21 @@ class EntregaModuloTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * Estas pruebas son del módulo de entrega, no de dónde salen los tickets.
+     *
+     * En producción el binding ya apunta a `TicketConsultaDb` (los tickets
+     * reales); aquí se fija el mock a propósito, que es el contrato mínimo
+     * que entrega necesita y mantiene estas pruebas independientes del
+     * módulo de ticket.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app->bind(TicketConsultaInterface::class, TicketConsultaMock::class);
+    }
+
     public function test_el_mock_de_ticket_devuelve_medicamentos(): void
     {
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-1001');

@@ -17,14 +17,17 @@ class RolSeeder extends Seeder
             'permisos' => [
                 'pacientes' => ['ver', 'crear', 'editar'],
                 'consultar_paciente' => ['ver'],
-                'orientacion' => ['usar'],
+                'orientacion' => ['usar', 'ver_orden'],
             ],
         ]);
 
+        // Quien atiende en la ventanilla también llama el turno.
         Rol::firstOrCreate(['nombre' => 'DISPENSADOR'], [
             'permisos' => [
                 'entrega' => ['ver', 'atender', 'domicilio', 'reportes'],
                 'pacientes' => ['ver'],
+                'tickets' => ['ver'],
+                'turnos' => ['ver', 'llamar', 'ausente'],
             ],
         ]);
     }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasName;
@@ -14,7 +15,21 @@ use Illuminate\Notifications\Notifiable;
 class User extends Authenticatable implements FilamentUser, HasName
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use Auditable, HasFactory, Notifiable;
+
+    /** Datos administrativos: quién entra, con qué rol y a qué sede. */
+    public const CAMPOS_AUDITADOS = [
+        'nombre',
+        'apellido',
+        'documento',
+        'email',
+        'sede_id',
+        'activo',
+        'es_administrador',
+        'roles',
+    ];
+
+    public const ETIQUETA_AUDITORIA = 'usuario';
 
     /**
      * The attributes that are mass assignable.
@@ -89,6 +104,11 @@ class User extends Authenticatable implements FilamentUser, HasName
     public function getNombreCompletoAttribute(): string
     {
         return "{$this->nombre} {$this->apellido}";
+    }
+
+    public function descripcionParaAuditoria(): string
+    {
+        return "el usuario {$this->documento}";
     }
 
     /**

@@ -41,6 +41,13 @@ class SedeResource extends Resource
                 Forms\Components\TextInput::make('nombre')
                     ->required()
                     ->maxLength(255),
+                Forms\Components\TextInput::make('codigo')
+                    ->label('Código')
+                    ->helperText('Va dentro del número del ticket: SP-LA30-20261003-A023.')
+                    ->maxLength(6)
+                    ->alphaNum()
+                    ->unique(ignoreRecord: true)
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null),
                 Forms\Components\TextInput::make('direccion')
                     ->label('Dirección')
                     ->maxLength(255),
@@ -85,22 +92,24 @@ class SedeResource extends Resource
     }
 
     /**
-     * Impide eliminar sedes que tengan usuarios asociados. La FK users.sede_id
-     * también lo restringe a nivel de base de datos.
+     * Impide eliminar sedes en uso: con usuarios, colas o ventanillas. Las FK
+     * también lo restringen en la base de datos, pero ahí el error sería feo.
      *
      * @param  iterable<Sede>  $sedes
      */
     public static function cancelarSiTieneUsuarios(MountableAction $action, iterable $sedes): void
     {
-        $conUsuarios = collect($sedes)->filter(fn (Sede $sede): bool => $sede->users()->exists());
+        $enUso = collect($sedes)->filter(fn (Sede $sede): bool => $sede->users()->exists()
+            || $sede->colas()->exists()
+            || $sede->ventanillas()->exists());
 
-        if ($conUsuarios->isEmpty()) {
+        if ($enUso->isEmpty()) {
             return;
         }
 
         Notification::make()
             ->title('No se puede eliminar')
-            ->body('Las siguientes sedes tienen usuarios asociados: '.$conUsuarios->pluck('nombre')->join(', ').'.')
+            ->body('Estas sedes están en uso (tienen usuarios, colas o ventanillas): '.$enUso->pluck('nombre')->join(', ').'.')
             ->danger()
             ->send();
 
