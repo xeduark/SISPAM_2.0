@@ -33,7 +33,7 @@ entrega (`buscarPorNumero($numero)`) sigue sirviendo sin cambios.
 ## Cómo nace
 
 ```
-El orientador registra al paciente
+El orientador atiende al paciente en Orientación
         │
         ├── carga la orden médica  ──► soportes
         └── marca la prioridad
@@ -131,11 +131,18 @@ quedan guardados** y se avisa con un mensaje rojo. Perder la orientación —la
 consulta a Savia, el contacto confirmado y la orden cargada— por un problema
 de configuración sería mucho peor que quedarse sin ticket.
 
-El soporte queda con `ticket_id` nulo; al arreglar la configuración se genera
-el ticket volviendo a editar el paciente.
+El soporte queda con `ticket_id` nulo, y la pantalla de **Orientación** ofrece
+completarlo después sin volver a tomar las fotos. Ver `docs/orientacion.md`.
 
-Esto vive en el trait `PacienteResource\Concerns\GeneraTicketDeLaVisita`, que
-usan `CreatePaciente` y `EditPaciente`.
+## Una sola pantalla abre visitas
+
+**Orientación** (`/admin/orientacion`), con `Services\Orientacion\RegistrarVisita`.
+
+El asistente de Pacientes tenía un paso que también generaba tickets; se
+retiró, junto con el trait `GeneraTicketDeLaVisita`. Un solo camino significa
+una sola regla para los duplicados: en vez de una idempotencia silenciosa por
+la ruta del archivo, la pantalla avisa cuando el paciente ya tiene una visita
+viva y deja decidir. El porqué está en `docs/orientacion.md`.
 
 ## La pantalla
 

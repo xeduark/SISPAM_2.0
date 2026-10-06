@@ -3,16 +3,12 @@
 namespace App\Filament\Resources\PacienteResource\Pages;
 
 use App\Filament\Resources\PacienteResource;
-use App\Filament\Resources\PacienteResource\Concerns\GeneraTicketDeLaVisita;
 use App\Models\Paciente;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
-use Illuminate\Database\Eloquent\Model;
 
 class EditPaciente extends EditRecord
 {
-    use GeneraTicketDeLaVisita;
-
     protected static string $resource = PacienteResource::class;
 
     /**
@@ -25,24 +21,6 @@ class EditPaciente extends EditRecord
         $data['contacto_confirmado_por'] = auth()->id();
 
         return $data;
-    }
-
-    /**
-     * Si el orientador cargó una orden nueva, queda como otro soporte del paciente.
-     */
-    protected function handleRecordUpdate(Model $record, array $data): Model
-    {
-        $soporte = PacienteResource::separarSoporte($data);
-        $datosTicket = PacienteResource::separarDatosDelTicket($data);
-
-        $record->update($data);
-
-        // Una orden médica nueva es una visita nueva: lleva su propio ticket.
-        if ($soporte !== null) {
-            $this->generarTicketDeLaVisita($record, $soporte, $datosTicket);
-        }
-
-        return $record;
     }
 
     /**

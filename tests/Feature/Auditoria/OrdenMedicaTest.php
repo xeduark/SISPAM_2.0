@@ -161,26 +161,26 @@ class OrdenMedicaTest extends TestCase
      *  El enlace en la ficha del paciente
      * ------------------------------------------------------------------ */
 
-    public function test_la_ficha_muestra_el_enlace_a_quien_tiene_permiso(): void
+    public function test_la_ficha_muestra_la_galeria_a_quien_tiene_permiso(): void
     {
         $this->actingAs($this->conPermiso());
 
         Livewire::test(ViewPaciente::class, ['record' => $this->paciente->getRouteKey()])
             ->assertSuccessful()
-            ->assertSee('Órdenes médicas')
-            ->assertSee('Abrir la orden médica')
-            ->assertSee($this->url());
+            ->assertSee('Fórmulas médicas')
+            // La miniatura es la que abre el original en el visor.
+            ->assertSee(route('soportes.miniatura', $this->soporte), escape: false);
     }
 
-    public function test_la_ficha_esconde_el_enlace_a_quien_no_tiene_permiso(): void
+    public function test_la_ficha_esconde_la_galeria_a_quien_no_tiene_permiso(): void
     {
         Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['pacientes' => ['ver']]]);
         $this->actingAs(User::factory()->create(['roles' => ['CONSULTA']]));
 
         Livewire::test(ViewPaciente::class, ['record' => $this->paciente->getRouteKey()])
             ->assertSuccessful()
-            ->assertDontSee('Órdenes médicas')
-            ->assertDontSee('Abrir la orden médica');
+            ->assertDontSee('Fórmulas médicas')
+            ->assertDontSee($this->url());
     }
 
     public function test_la_ficha_no_muestra_la_seccion_si_el_paciente_no_tiene_ordenes(): void

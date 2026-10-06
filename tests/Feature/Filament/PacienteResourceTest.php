@@ -10,11 +10,9 @@ use App\Models\Paciente;
 use App\Models\Rol;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -159,36 +157,48 @@ class PacienteResourceTest extends TestCase
      *  Orientación: orden médica y alto costo (rol ORIENTADOR)
      * ------------------------------------------------------------------ */
 
-    public function test_sin_rol_orientador_no_aparece_el_paso_de_orientacion(): void
-    {
-        $this->fakeConsultaExitosa();
-
-        $this->confirmarContacto($this->consultar())
-            ->assertDontSee('Orden médica')
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $this->assertSame(0, Paciente::first()->soportes()->count());
-    }
-
-    public function test_el_orientador_debe_cargar_la_orden_medica(): void
+    /**
+     * El asistente dejó de abrir visitas: eso pasó a Orientación.
+     *
+     * Aquí se registra o se corrige la ficha, y nada más. Registrar a alguien
+     * y atender su visita son dos cosas, y mezclarlas era lo que hacía largo
+     * este formulario. Ver `docs/orientacion.md`.
+     */
+    public function test_el_asistente_ya_no_pide_la_formula(): void
     {
         $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
         $this->fakeConsultaExitosa();
 
         $this->confirmarContacto($this->consultar())
-            ->assertSee('Orden médica')
+            ->assertDontSee('Orden médica')
+            ->assertDontSee('Prioridad en la fila')
+            // Sin fórmula se guarda igual: ya no es obligatoria aquí.
             ->call('create')
-            ->assertHasFormErrors(['orden_medica' => 'required']);
+            ->assertHasNoFormErrors();
 
-        $this->assertDatabaseCount('pacientes', 0);
+        $this->assertDatabaseCount('pacientes', 1);
+    }
+
+    public function test_registrar_un_paciente_no_abre_ninguna_visita(): void
+    {
+        $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
+        $this->fakeConsultaExitosa();
+
+        $this->confirmarContacto($this->consultar())
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $paciente = Paciente::sole();
+
+        $this->assertSame(0, $paciente->soportes()->count());
+        $this->assertSame(0, $paciente->tickets()->count());
     }
 
     /**
-     * Al orientador no se le pregunta por alto costo: no conoce los
-     * medicamentos. Lo marca farmacia al alistar.
+     * El alto costo no se pregunta en ningún lado del asistente: lo marca
+     * farmacia al alistar, que es quien ve los medicamentos.
      */
-    public function test_al_orientador_no_se_le_pregunta_por_alto_costo(): void
+    public function test_el_asistente_no_pregunta_por_alto_costo(): void
     {
         $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
         $this->fakeConsultaExitosa();
@@ -196,27 +206,6 @@ class PacienteResourceTest extends TestCase
         $this->confirmarContacto($this->consultar())
             ->assertDontSee('alto costo')
             ->assertDontSee('oncológico');
-    }
-
-    public function test_la_orden_medica_queda_como_soporte_del_paciente(): void
-    {
-        Storage::fake('local');
-        $this->admin->update(['roles' => ['PERSONAL', 'ORIENTADOR']]);
-        $this->fakeConsultaExitosa();
-
-        $this->confirmarContacto($this->consultar(), [
-            'orden_medica' => UploadedFile::fake()->image('orden.jpg'),
-        ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $soporte = Paciente::first()->soportes()->sole();
-
-        // `null` quiere decir «no se preguntó», que es la verdad: la marca la
-        // pone farmacia sobre el ticket, no el orientador sobre el soporte.
-        $this->assertNull($soporte->alto_costo_oncologico);
-        $this->assertSame($this->admin->id, $soporte->cargado_por);
-        Storage::disk('local')->assertExists($soporte->orden_medica);
     }
 
     /* ------------------------------------------------------------------ *

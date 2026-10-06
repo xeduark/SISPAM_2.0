@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Tickets;
 
-use App\Filament\Resources\PacienteResource\Pages\CreatePaciente;
 use App\Filament\Resources\TicketResource;
 use App\Filament\Resources\TicketResource\Pages\ListTickets;
 use App\Models\Auditoria;
@@ -15,9 +14,6 @@ use App\Models\User;
 use App\Services\Tickets\AlistarTicket;
 use App\Services\Tickets\GenerarTicket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -428,131 +424,6 @@ class TicketTest extends TestCase
         $this->get('/admin/tickets/create')->assertNotFound();
     }
 
-    /* ------------------------------------------------------------------ *
-     *  El flujo real: el ticket nace al registrar al paciente
-     * ------------------------------------------------------------------ */
-
-    public function test_registrar_un_paciente_con_orden_medica_genera_su_ticket(): void
-    {
-        Storage::fake('local');
-
-        Rol::updateOrCreate(['nombre' => 'ORIENTADOR'], ['permisos' => [
-            'pacientes' => ['ver', 'crear', 'editar'],
-            'orientacion' => ['usar'],
-        ]]);
-
-        $orientador = User::factory()->create([
-            'sede_id' => $this->sede->id,
-            'roles' => ['ORIENTADOR'],
-        ]);
-        $this->actingAs($orientador);
-
-        Http::fake([
-            '*rest/token/generacion' => Http::response(['access_token' => 'TOKEN-A']),
-            '*rest/afiliado/consultar-afiliado' => Http::response([
-                'registros' => 1,
-                'codigo' => 0,
-                'afiliados' => [[
-                    'tipoDocumentoAfiliado' => 'CC',
-                    'documentoAfiliado' => '1017234567',
-                    'primerNombreAfiliado' => 'JUAN',
-                    'primerApellidoAfiliado' => 'PEREZ',
-                    'estadoAfiliacion' => 'Activo',
-                    'regimen' => 'SUBSIDIADO',
-                    'telefonoMovil' => '3001234567',
-                    'direccion' => 'KR 40 70A 23',
-                    'descripcionCiudadResidencia' => 'MEDELLÍN',
-                ]],
-            ]),
-        ]);
-
-        $pagina = Livewire::test(CreatePaciente::class)
-            ->fillForm(['tipo_documento' => 'CC', 'numero_documento' => '1017234567'])
-            ->call('mountFormComponentAction', 'data.consultarEnSaviaAction', 'consultarEnSavia');
-
-        $pagina->fillForm([
-            'contacto_confirmado' => true,
-            'orden_medica' => UploadedFile::fake()->image('orden.jpg'),
-            'prioridad' => Ticket::PRIORIDAD_PREFERENCIAL,
-            'motivo_prioridad' => 'adulto_mayor',
-        ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $paciente = Paciente::where('numero_documento', '1017234567')->firstOrFail();
-        $ticket = $paciente->tickets()->sole();
-
-        // Nace en la general y sin marca: eso lo decide farmacia al alistar.
-        $this->assertSame($this->general->id, $ticket->cola_id);
-        $this->assertSame('0001', $ticket->turno);
-        $this->assertFalse($ticket->alto_costo);
-        $this->assertTrue($ticket->esPreferencial());
-        $this->assertSame('adulto_mayor', $ticket->motivo_prioridad);
-        $this->assertSame(Ticket::ESTADO_GENERADO, $ticket->estado);
-        $this->assertSame($this->sede->id, $ticket->sede_id);
-
-        // Y la orden médica quedó colgada de ese ticket.
-        $this->assertSame($ticket->id, $paciente->soportes()->sole()->ticket_id);
-    }
-
-    public function test_si_la_sede_no_tiene_colas_el_paciente_igual_queda_registrado(): void
-    {
-        Storage::fake('local');
-
-        // Una sede sin configurar: no debería costarle al paciente su registro.
-        $sinColas = Sede::factory()->create(['nombre' => 'Sede sin configurar']);
-
-        Rol::updateOrCreate(['nombre' => 'ORIENTADOR'], ['permisos' => [
-            'pacientes' => ['ver', 'crear', 'editar'],
-            'orientacion' => ['usar'],
-        ]]);
-
-        $this->actingAs(User::factory()->create([
-            'sede_id' => $sinColas->id,
-            'roles' => ['ORIENTADOR'],
-        ]));
-
-        Http::fake([
-            '*rest/token/generacion' => Http::response(['access_token' => 'TOKEN-A']),
-            '*rest/afiliado/consultar-afiliado' => Http::response([
-                'registros' => 1,
-                'codigo' => 0,
-                'afiliados' => [[
-                    'tipoDocumentoAfiliado' => 'CC',
-                    'documentoAfiliado' => '1017234567',
-                    'primerNombreAfiliado' => 'JUAN',
-                    'primerApellidoAfiliado' => 'PEREZ',
-                    'estadoAfiliacion' => 'Activo',
-                    'telefonoMovil' => '3001234567',
-                    'direccion' => 'KR 40 70A 23',
-                    'descripcionCiudadResidencia' => 'MEDELLÍN',
-                ]],
-            ]),
-        ]);
-
-        Livewire::test(CreatePaciente::class)
-            ->fillForm(['tipo_documento' => 'CC', 'numero_documento' => '1017234567'])
-            ->call('mountFormComponentAction', 'data.consultarEnSaviaAction', 'consultarEnSavia')
-            ->fillForm([
-                'contacto_confirmado' => true,
-                'alto_costo_oncologico' => false,
-                'orden_medica' => UploadedFile::fake()->image('orden.jpg'),
-            ])
-            ->call('create')
-            ->assertHasNoFormErrors()
-            ->assertNotified('El paciente quedó registrado, pero sin ticket');
-
-        $paciente = Paciente::where('numero_documento', '1017234567')->firstOrFail();
-
-        // Nada de la orientación se perdió...
-        $soporte = $paciente->soportes()->sole();
-        Storage::disk('local')->assertExists($soporte->orden_medica);
-        $this->assertSame('3001234567', $paciente->telefono_movil);
-
-        // ...y simplemente no hay ticket.
-        $this->assertNull($soporte->ticket_id);
-        $this->assertSame(0, Ticket::count());
-    }
     /* ------------------------------------------------------------------ *
      *  Auditoría
      * ------------------------------------------------------------------ */

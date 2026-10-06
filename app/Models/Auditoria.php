@@ -34,6 +34,15 @@ class Auditoria extends Model
 
     public const ACCION_DESCARGO_ORDEN = 'descargo_orden';
 
+    /**
+     * Entró a la galería de fórmulas de un paciente.
+     *
+     * Es distinto de abrir una: ver las miniaturas no es leer la fórmula. Se
+     * separan para que el rastro de quién sí la leyó no quede enterrado entre
+     * una línea por cada imagen que se pintó en pantalla.
+     */
+    public const ACCION_VIO_GALERIA = 'vio_galeria';
+
     /** El cierre del día venció los tickets que nadie alcanzó a atender. */
     public const ACCION_CERRO_DIA = 'cerro_dia';
 
@@ -46,6 +55,7 @@ class Auditoria extends Model
         self::ACCION_ELIMINO => 'Eliminó',
         self::ACCION_CONSULTO_SAVIA => 'Consultó en Savia',
         self::ACCION_DESCARGO_ORDEN => 'Abrió una orden médica',
+        self::ACCION_VIO_GALERIA => 'Vio la galería de fórmulas',
         self::ACCION_CERRO_DIA => 'Cerró el día',
     ];
 
@@ -58,6 +68,7 @@ class Auditoria extends Model
         self::ACCION_ELIMINO => 'danger',
         self::ACCION_CONSULTO_SAVIA => 'info',
         self::ACCION_DESCARGO_ORDEN => 'warning',
+        self::ACCION_VIO_GALERIA => 'gray',
         self::ACCION_CERRO_DIA => 'warning',
     ];
 

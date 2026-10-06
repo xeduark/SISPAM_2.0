@@ -46,7 +46,7 @@ librerías nuevas, y respeta la paleta institucional del panel.
 | 2. Ubicación y contacto | Teléfonos, ciudad, dirección, barrio, indicaciones de entrega y la casilla de confirmación. También la residencia según Savia. |
 | 3. Afiliación | Estado de la afiliación, IPS y portabilidad, núcleo familiar. |
 | 4. Caracterización | Condición de salud, Sisbén, programas y RIAS, otros datos de Savia, observación. |
-| 5. Orientación | La orden médica y la prioridad. Solo aparece con permiso `orientacion.usar`. |
+| ~~5. Orientación~~ | **Retirado.** La fórmula y la prioridad se toman en `/admin/orientacion`. |
 
 Comportamiento:
 
@@ -66,8 +66,16 @@ aplican con el resultado de la consulta a Savia ya cargado.
 
 ## 2. Orientación: orden médica y prioridad
 
-Este paso solo lo ve quien tenga el permiso `orientacion.usar`, además de los
-administradores.
+> **Esta sección describe un paso que ya no existe.** Se retiró del asistente:
+> la fórmula y la prioridad se toman en la pantalla **Orientación**
+> (`/admin/orientacion`), que es la única que abre visitas. Con el paso se
+> fueron el trait `GeneraTicketDeLaVisita` y
+> `PacienteResource::separarSoporte()`, y registrar un paciente aquí **ya no
+> exige fórmula**. Se conserva como historia de por qué las reglas son como
+> son; lo vigente está en `docs/orientacion.md`.
+
+Este paso solo lo veía quien tuviera el permiso `orientacion.usar`, además de
+los administradores.
 
 | Campo | Regla |
 |---|---|
@@ -103,6 +111,7 @@ privado y **cada acceso queda en la auditoría**. Ver `docs/auditoria.md`.
 
 La generación del ticket se hace desde aquí: cargar una orden médica abre una
 visita. Detalle en `docs/tickets.md`.
+
 
 ## 3. Roles y matriz de permisos
 

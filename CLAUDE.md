@@ -158,9 +158,82 @@ hace falta que la IP del equipo esté autorizada por Savia.
   y `Sede::opciones()` para selectores y filtros. Armarla en un solo sitio es lo que
   garantiza que todas las pantallas y el ticket impreso digan lo mismo.
 - Un usuario pertenece a **una sola** sede (`users.sede_id`).
+## Orientación (pantalla de ingreso rápido)
+- `/admin/orientacion` — donde el orientador recibe al paciente **en una sola
+  pantalla**: documento → Enter → Savia llena los datos → confirma el contacto
+  → foto de la fórmula → «Generar ticket». Permiso `orientacion.usar`.
+- **Está hecha para el celular**: una columna, campos grandes, teclado numérico
+  en el documento. En pantallas anchas se abre a dos columnas sola.
+- **El turno sale enorme en la pantalla**, no solo en el papel: la impresora
+  está en el mostrador y el orientador en el teléfono, así que generar el
+  ticket no puede depender de que el celular alcance la impresora. Imprimir es
+  un extra (`tickets.imprimir`), y el PC del mostrador siempre puede reimprimir.
+- **No duplica nada**: reusa `consultarEnSavia()`, `CAMPOS_SAVIA`/`CAMPOS_CONTACTO`,
+  `separarOrdenesMedicas()`, `separarDatosDelTicket()` y `GenerarTicket`. Lo propio es
+  `Services\Orientacion\RegistrarVisita`, que en **una transacción** crea o
+  actualiza al paciente, cuelga la fórmula y abre el ticket.
+- **La sugerencia de prioridad se mudó a `Ticket::prioridadSugeridaPara()`**
+  (antes vivía en `PacienteResource::motivoSugerido()`, atada a un `Forms\Get`):
+  hay dos pantallas que abren visitas y las dos tienen que sugerir lo mismo.
+- Si no se puede generar el ticket (sede sin colas), **el paciente y su fórmula
+  igual se guardan**. Misma regla que el asistente.
+- **Es la única pantalla que abre visitas.** El paso Orientación del asistente
+  de Pacientes **se retiró** (con él, el trait `GeneraTicketDeLaVisita` y
+  `separarSoporte()`): el argumento que lo sostenía —recuperar una fórmula sin
+  ticket «volviendo a editar el paciente»— **no funcionaba**, porque el campo
+  sale vacío al editar y el archivo nuevo recibe otra ruta, así que creaba un
+  soporte nuevo y dejaba el huérfano colgando. Un solo camino = una sola regla
+  para los duplicados. `/admin/pacientes` queda para registrar y corregir la
+  ficha, y **ya no exige fórmula al crear**.
+- **La fórmula que quedó sin turno** (sede sin colas) se completa desde
+  Orientación: al consultar a ese paciente se avisa y se ofrece «Generar el
+  turno de esa fórmula», **sin volver a tomar las fotos** ni reconfirmar el
+  contacto. Solo las hojas de la **carga más reciente**: dos días mal
+  configurados son dos fórmulas distintas. Se renumeran desde 1.
+- **Varias fotos por visita**: de 1 a 10 archivos (JPG, PNG, WEBP, PDF) de 10 MB.
+  **Un soporte por hoja**, todos del mismo ticket, con su `pagina`
+  (`2026_10_07_100000_varias_formulas_por_visita` agrega `pagina` y `mime`).
+  Un soporte por archivo deja intactas la ruta protegida y la auditoría, que
+  trabajan **por soporte**: así queda el rastro de quién abrió *cuál* hoja.
+  **El nombre original del archivo no se guarda**: llevaría el del paciente.
+- El campo es el `FileUpload` de Filament, no JS propio: cuadrícula
+  (`panelLayout('grid')`), agregar sin perder (`appendFiles`), reordenar
+  (`reorderable`), ver grande y rotar (`imageEditor`) y **reducir a 2000 px en
+  el navegador** (`imageResize*`), que de paso endereza por EXIF y borra los
+  metadatos. Arrastrar una hoja cambia su `pagina`.
+- **Sin `openable()` a propósito**: con archivos temporales no hay URL, y con
+  los guardados caería a `Storage::url()` — una URL pública a un dato de salud.
+- **HEIC no está en `acceptedFileTypes` a propósito**: pedir `image/jpeg` es lo
+  que hace que iOS convierta la foto al elegirla. El que llegue igual se
+  rechaza con un mensaje que dice cómo cambiar el formato en el iPhone.
+- **Si el paciente ya tiene una visita viva en esa sede**, se avisa antes de
+  generar otra (`Services\Orientacion\VisitaAbierta`): turno de hoy sin cerrar,
+  o parcial con pendientes de cualquier fecha (los parciales no vencen). Si hay
+  los dos manda el de hoy. Tres salidas: **reimprimir** el que tiene, **sumar
+  las fotos a esa visita** (sin consumir turno, siguiendo la numeración de
+  páginas) o **generar otro de todos modos**, que queda en la auditoría.
+  Solo mira la sede propia: las tres salidas exigen misma sede.
+  `RegistrarVisita` comprueba que la visita sea del paciente y de la sede — ese
+  id viaja por Livewire.
+- **Galería de fórmulas en la ficha del paciente** (sección «Fórmulas
+  médicas»): agrupadas por visita, miniaturas, y un visor con zoom y giro hecho
+  con el Alpine que ya trae Filament. Los PDF se abren en el visor del navegador.
+- **Miniaturas**: `soportes/{soporte}/miniatura`, 400 px, GD, mismo disco
+  privado y **mismo permiso** que el original
+  (`2026_10_07_110000_miniaturas_de_las_formulas`). Se generan **cuando alguien
+  las pide**, no al guardar: así no se alarga la transacción del mostrador y
+  los soportes viejos quedan cubiertos sin comando de relleno.
+- **Las miniaturas no auditan, y es a propósito**: una línea por imagen pintada
+  enterraría el rastro de quién sí leyó la fórmula. Queda **una línea por
+  entrada a la galería** (`Auditoria::ACCION_VIO_GALERIA`, desde
+  `ViewPaciente::mount()`); abrir una hoja concreta se sigue auditando una por una.
+- Falta: **las fórmulas en el modal de Alistar** — fuera de alcance, ese módulo
+  es de otra persona. Con ello queda pendiente el segundo camino de permiso en
+  `OrdenMedicaController` (`tickets.alistar` + misma sede).
+- Detalle: `docs/orientacion.md`.
 ## Tickets
-- El ticket **es la visita del paciente**. Nace cuando el orientador lo registra con su
-  orden médica (`GeneraTicketDeLaVisita` en Create/EditPaciente) y lleva dos identificadores:
+- El ticket **es la visita del paciente**. Nace en **Orientación**
+  (`/admin/orientacion`), cuando el orientador carga la fórmula, y lleva dos identificadores:
   - `numero` (`TK-PRP-261005-0060`) **único en todo el sistema** — es lo que busca entrega.
   - `turno` (`0060`) corto, por sede y día — es lo que ve el paciente.
   El número lleva sede y fecha, así que el mismo turno puede existir en dos sedes
@@ -183,6 +256,7 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - `soportes.alto_costo_oncologico` quedó nullable: `null` = «no se preguntó».
 - **Si la sede no tiene colas, el paciente igual queda registrado** con su orden médica
   y se avisa: perder la orientación por un problema de configuración es peor.
+  Esa fórmula se completa después desde Orientación, sin volver a tomar las fotos.
 - Prioridad `normal` o `preferencial`; se **sugiere** por edad (≥60) y discapacidad
   según Savia, pero el orientador decide. Los preferenciales se llaman de primeras.
 - Pantalla **Tickets** con pestañas Por alistar / Listos / Todos, filtrada por sede.

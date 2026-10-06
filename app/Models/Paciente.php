@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class Paciente extends Model
@@ -291,6 +292,63 @@ class Paciente extends Model
     public function entregas(): HasMany
     {
         return $this->hasMany(Entrega::class);
+    }
+
+    /**
+     * Las fórmulas del paciente, agrupadas por la visita en que se cargaron.
+     *
+     * De la visita más reciente a la más vieja, y dentro de cada una por el
+     * orden de las hojas. Las que quedaron sin ticket —la sede no tenía colas
+     * cuando se registraron— van al final, en su propio grupo.
+     *
+     * La clave de cada grupo es el `ticket_id` —entero, porque PHP convierte
+     * las claves numéricas de un arreglo aunque se pasen como texto— o la
+     * cadena `sin-visita`. Conviene no depender de ella: cada grupo trae su
+     * ticket en `$hojas->first()->ticket`.
+     *
+     * @return Collection<int|string, \Illuminate\Database\Eloquent\Collection<int, Soporte>>
+     */
+    public function formulasPorVisita(): Collection
+    {
+        return $this->soportes()
+            ->with(['ticket.sede', 'cargadoPor'])
+            ->orderByRaw('ticket_id IS NULL')
+            ->orderByDesc('ticket_id')
+            ->orderBy('pagina')
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (Soporte $soporte): int|string => $soporte->ticket_id ?? 'sin-visita');
+    }
+
+    /**
+     * Las hojas que quedaron sin turno, de la carga más reciente.
+     *
+     * Pasa cuando la sede no tenía colas activas: la fórmula se guarda igual
+     * —perderla sería peor— pero no hay ticket del que colgarla. Orientación
+     * ofrece completarlas sin volver a tomar las fotos.
+     *
+     * **Solo las del día de carga más reciente.** Si una sede estuvo mal
+     * configurada dos días distintos, son dos fórmulas distintas y juntarlas
+     * en un mismo ticket mezclaría dos atenciones. Las anteriores vuelven a
+     * ofrecerse la próxima vez.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, Soporte>
+     */
+    public function formulasSinTurno(): \Illuminate\Database\Eloquent\Collection
+    {
+        $sinTurno = $this->soportes()
+            ->whereNull('ticket_id')
+            ->orderByDesc('created_at')
+            ->orderBy('pagina')
+            ->orderBy('id')
+            ->get();
+
+        $ultimaCarga = $sinTurno->first()?->created_at?->toDateString();
+
+        return $sinTurno
+            ->filter(fn (Soporte $hoja): bool => $hoja->created_at?->toDateString() === $ultimaCarga)
+            ->sortBy([['pagina', 'asc'], ['id', 'asc']])
+            ->values();
     }
 
     public function tieneContactoConfirmado(): bool

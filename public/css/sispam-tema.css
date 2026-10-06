@@ -200,3 +200,271 @@
         white-space: normal;
     }
 }
+
+/*
+ * Orientación: la pantalla donde se recibe al paciente (§9, §17, §20).
+ *
+ * Está pensada para el celular, así que todo se dimensiona para el pulgar y
+ * el turno generado se lee desde el otro lado del mostrador. No introduce
+ * colores ni fuentes nuevas: reusa las variables de arriba y la paleta
+ * `primary` registrada en AdminPanelProvider.
+ */
+.sispam-orientacion {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* El bloque del turno recién generado */
+.sispam-turno__numero {
+    font-size: 72px;
+    line-height: 1.05;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: rgb(var(--primary-600));
+    margin: 6px 0 2px;
+}
+
+.dark .sispam-turno__numero {
+    color: rgb(var(--primary-400));
+}
+
+.sispam-turno__acciones {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+}
+
+/* La ficha del afiliado: se distingue del resto con un borde a la izquierda */
+.sispam-ficha {
+    border-left: 4px solid rgb(var(--primary-600));
+}
+
+/* El formulario de la visita y su botón */
+.sispam-orientacion__visita {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.sispam-orientacion__generar {
+    display: flex;
+    justify-content: center;
+}
+
+.sispam-orientacion__generar .fi-btn {
+    min-width: min(420px, 100%);
+    padding-block: 1rem;
+    font-size: 18px;
+}
+
+/* Teléfonos (§20): el botón de generar queda siempre a la vista */
+@media (max-width: 600px) {
+    .sispam-turno__numero {
+        font-size: 64px;
+    }
+
+    .sispam-turno__acciones .fi-btn,
+    .sispam-orientacion__generar .fi-btn {
+        width: 100%;
+    }
+}
+
+/*
+ * La cuadrícula de fórmulas de Orientación.
+ *
+ * FilePond pinta las miniaturas; aquí solo se ajusta el tamaño para que en el
+ * celular quepan dos por fila y se reconozca cuál es cuál sin abrirlas. El
+ * orden de la cuadrícula es el orden de las hojas, así que arrastrar una
+ * cambia su número de página.
+ */
+.sispam-orientacion .fi-fo-file-upload .filepond--item {
+    width: calc(50% - 0.5em);
+}
+
+@media (min-width: 640px) {
+    .sispam-orientacion .fi-fo-file-upload .filepond--item {
+        width: calc(33.33% - 0.5em);
+    }
+}
+
+/* El aviso de que el paciente ya tiene una visita viva (§15, §17) */
+.sispam-visita-abierta {
+    border-left: 4px solid rgb(var(--warning-600, 183 121 31));
+}
+
+.sispam-visita-abierta__acciones {
+    margin-top: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+@media (max-width: 600px) {
+    .sispam-visita-abierta__acciones .fi-btn {
+        width: 100%;
+    }
+}
+
+/*
+ * Galería de fórmulas de la ficha del paciente (§9, §17, §20).
+ *
+ * Miniaturas en cuadrícula, agrupadas por visita, y el visor a pantalla
+ * completa. Como el resto, solo variables del tema: ningún color suelto.
+ */
+.sispam-galeria {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.sispam-galeria__visita + .sispam-galeria__visita {
+    border-top: 1px solid var(--sispam-border);
+    padding-top: 1.25rem;
+}
+
+.sispam-galeria__encabezado {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.sispam-galeria__hojas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 10px;
+}
+
+.sispam-galeria__hoja {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    aspect-ratio: 3 / 4;
+    overflow: hidden;
+    border: 1px solid var(--sispam-border);
+    border-radius: 8px;
+    background: var(--sispam-card-soft);
+    cursor: pointer;
+    transition: var(--sispam-transition);
+}
+
+.sispam-galeria__hoja:hover {
+    border-color: rgb(var(--primary-600));
+    transform: translateY(-2px);
+}
+
+.sispam-galeria__hoja img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.sispam-galeria__hoja--pdf {
+    color: var(--sispam-muted);
+    text-decoration: none;
+}
+
+/* El número de hoja, para no perder el orden de lectura */
+.sispam-galeria__pagina {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* El visor */
+.sispam-visor {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.sispam-visor__barra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+}
+
+.sispam-visor__titulo {
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.sispam-visor__botones {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sispam-visor__botones button,
+.sispam-visor__botones a {
+    min-width: 38px;
+    height: 38px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    background: transparent;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: var(--sispam-transition);
+}
+
+.sispam-visor__botones button:hover,
+.sispam-visor__botones a:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.sispam-visor__lienzo {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.sispam-visor__lienzo img {
+    max-width: 100%;
+    max-height: 100%;
+    transition: transform 0.2s ease;
+}
+
+/* Teléfonos (§20) */
+@media (max-width: 600px) {
+    .sispam-galeria__hojas {
+        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    }
+
+    .sispam-visor__barra {
+        justify-content: center;
+    }
+}
