@@ -50,7 +50,13 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
     {
         $sinConsulta = fn (): bool => ! $this->hayConsultaVigente();
 
-        return array_map(fn (Action $accion): Action => $accion->livewire($this), [
+        return array_map(fn (Action $accion): Action => $accion
+            ->livewire($this)
+            // Evita doble clic mientras Livewire procesa el create.
+            ->extraAttributes([
+                'wire:loading.attr' => 'disabled',
+                'wire:target' => 'create',
+            ]), [
             $this->getCreateFormAction()
                 // El mismo flujo sirve para registrar y para actualizar: el botón
                 // dice lo que de verdad va a pasar.

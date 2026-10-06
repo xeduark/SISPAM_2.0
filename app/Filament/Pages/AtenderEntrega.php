@@ -8,6 +8,7 @@ use App\Filament\Resources\EntregaResource;
 use App\Models\Entrega;
 use App\Models\EntregaItem;
 use App\Models\Sede;
+use App\Models\Ticket;
 use App\Services\Entrega\RegistrarEntrega;
 use App\Services\Entrega\SaldoTicket;
 use Filament\Forms;
@@ -64,7 +65,7 @@ class AtenderEntrega extends Page implements HasForms
         $this->atencionForm->fill([
             'tipo' => Entrega::TIPO_PRESENCIAL,
             'receptor_parentesco' => 'Paciente',
-            'sede_id' => auth()->user()?->sede_id,
+            'sede_id' => null,
         ]);
     }
 
@@ -97,16 +98,22 @@ class AtenderEntrega extends Page implements HasForms
             ->schema([
                 Forms\Components\Section::make('Sede y tipo de entrega')
                     ->schema([
-                        Forms\Components\Select::make('sede_id')
+                        Forms\Components\Hidden::make('sede_id'),
+                        Forms\Components\Placeholder::make('sede_ticket')
                             ->label('Sede de atención')
-                            ->options(fn (): array => Sede::query()
-                                ->where('activa', true)
-                                ->orderBy('nombre')
-                                ->pluck('nombre', 'id')
-                                ->all())
-                            ->required()
-                            ->searchable()
-                            ->helperText('Indica en qué sede estás dispensando ahora. Quedará guardada en la entrega aunque luego cambies de sede.'),
+                            ->content(function (Get $get): string {
+                                $sedeId = (int) ($get('sede_id') ?? 0);
+                                if ($sedeId <= 0) {
+                                    return 'Se muestra al consultar el ticket.';
+                                }
+
+                                $nombre = Sede::query()->whereKey($sedeId)->value('nombre');
+
+                                return $nombre
+                                    ? "{$nombre} — los medicamentos se reclaman aquí (no se puede cambiar)"
+                                    : "Sede #{$sedeId} — sede del ticket (no se puede cambiar)";
+                            })
+                            ->helperText('El ticket queda amarrado a la sede donde se generó. La entrega se registra siempre en esa misma sede.'),
                         Forms\Components\Radio::make('tipo')
                             ->label('¿Cómo se entrega?')
                             ->options([
@@ -236,25 +243,26 @@ class AtenderEntrega extends Page implements HasForms
                     ->schema([
                         Forms\Components\TextInput::make('receptor_nombre')
                             ->label('Nombre de quien recibe')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
                             ->maxLength(255),
                         Forms\Components\TextInput::make('receptor_documento')
                             ->label('Documento de quien recibe')
-                            ->required()
+                            ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
                             ->maxLength(40),
                         Forms\Components\TextInput::make('receptor_parentesco')
                             ->label('Parentesco / relación')
                             ->maxLength(80),
                         Forms\Components\FileUpload::make('firma')
                             ->label('Firma o evidencia de recibido')
-                            ->image()
                             ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
                             ->maxSize(5120)
                             ->disk('local')
                             ->directory('soportes/firmas-entrega/tmp')
                             ->visibility('private')
-                            ->required()
-                            ->helperText('Imagen JPG, PNG o WEBP de máximo 5 MB.'),
+                            ->fetchFileInformation(false)
+                            ->required(fn (Get $get): bool => $get('tipo') === Entrega::TIPO_PRESENCIAL)
+                            ->helperText('Imagen JPG, PNG o WEBP de máximo 5 MB.')
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
                 Forms\Components\Textarea::make('observaciones')
@@ -287,27 +295,40 @@ class AtenderEntrega extends Page implements HasForms
             return;
         }
 
-        // El ticket es de otra sede: no se atiende aquí. El contrato expone
-        // `sedeId` justamente para esto.
-        $usuario = auth()->user();
-
-        if (! $usuario->es_administrador && $dto->sedeId !== (int) $usuario->sede_id) {
-            $this->ticket = null;
-            Notification::make()
-                ->title('Ticket de otra sede')
-                ->body('Ese ticket pertenece a otra sede y no se puede atender desde aquí.')
-                ->danger()
-                ->send();
-
-            return;
-        }
+        // La sede de dispensación es la del ticket (no la del perfil del
+        // usuario: el dispensador puede rotar de sede). Se valida al registrar.
 
         if (! $dto->listoParaEntrega()) {
-            $this->ticket = null;
+            // El ticket existe: se muestra bloqueado, no «Sin ticket».
+            $this->ticket = $this->ticketAArray($dto);
+            $this->ticketBloqueado = true;
+
+            [$titulo, $cuerpo] = match ($dto->estado) {
+                Ticket::ESTADO_ENTREGADO => [
+                    'Ticket ya dispensado',
+                    'Este ticket ya fue dispensado completamente.',
+                ],
+                Ticket::ESTADO_ANULADO => [
+                    'Ticket anulado',
+                    'Este ticket se encuentra anulado y no puede ser dispensado.',
+                ],
+                Ticket::ESTADO_VENCIDO => [
+                    'Ticket vencido',
+                    'Este ticket se encuentra vencido y no puede ser dispensado.',
+                ],
+                default => [
+                    'Ticket no disponible',
+                    'Este ticket todavía no está disponible para dispensación.',
+                ],
+            };
+
+            $this->mensajeBloqueo = $cuerpo;
+
             Notification::make()
-                ->title('Ticket no listo')
-                ->body('El ticket no está disponible para dispensación en este momento.')
+                ->title($titulo)
+                ->body($cuerpo)
                 ->warning()
+                ->persistent()
                 ->send();
 
             return;
@@ -341,7 +362,7 @@ class AtenderEntrega extends Page implements HasForms
 
         $this->atencionForm->fill([
             'tipo' => Entrega::TIPO_PRESENCIAL,
-            'sede_id' => auth()->user()?->sede_id,
+            'sede_id' => $dto->sedeId,
             'receptor_nombre' => $dto->paciente->nombreCompleto,
             'receptor_documento' => $dto->paciente->numeroDocumento,
             'receptor_parentesco' => 'Paciente',
@@ -370,7 +391,7 @@ class AtenderEntrega extends Page implements HasForms
         $this->busquedaForm->fill([]);
         $this->atencionForm->fill([
             'tipo' => Entrega::TIPO_PRESENCIAL,
-            'sede_id' => auth()->user()?->sede_id,
+            'sede_id' => null,
             'receptor_parentesco' => 'Paciente',
             'items' => [],
         ]);
@@ -400,7 +421,6 @@ class AtenderEntrega extends Page implements HasForms
                 return;
             }
 
-            $this->atencionForm->validate();
             $datos = $this->atencionForm->getState();
 
             $items = collect($datos['items'] ?? [])->map(fn (array $item): array => [
@@ -430,7 +450,8 @@ class AtenderEntrega extends Page implements HasForms
 
             $entrega = $registrar->handle($dto, auth()->user(), [
                 'tipo' => $datos['tipo'],
-                'sede_id' => (int) ($datos['sede_id'] ?? auth()->user()->sede_id),
+                // Siempre la sede del ticket; el selector ya no es editable.
+                'sede_id' => $dto->sedeId,
                 'observaciones' => $datos['observaciones'] ?? null,
                 'receptor_nombre' => $datos['receptor_nombre'] ?? null,
                 'receptor_documento' => $datos['receptor_documento'] ?? null,
@@ -468,6 +489,7 @@ class AtenderEntrega extends Page implements HasForms
         return [
             'numero' => $ticket->numero,
             'turno' => $ticket->turno,
+            'sede_id' => $ticket->sedeId,
             'alto_costo' => $ticket->altoCosto,
             'paciente' => [
                 'tipo_documento' => $ticket->paciente->tipoDocumento,
@@ -508,7 +530,19 @@ class AtenderEntrega extends Page implements HasForms
         }
 
         if (is_array($firma)) {
-            $firma = reset($firma) ?: null;
+            $ruta = null;
+            foreach ($firma as $archivo) {
+                if ($archivo instanceof TemporaryUploadedFile) {
+                    return $archivo->get();
+                }
+
+                if (is_string($archivo) && $archivo !== '') {
+                    $ruta = $archivo;
+
+                    break;
+                }
+            }
+            $firma = $ruta;
         }
 
         if (is_string($firma) && $firma !== '' && Storage::disk('local')->exists($firma)) {

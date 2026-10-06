@@ -68,10 +68,28 @@ class RegistrarEntrega
             throw new InvalidArgumentException('La entrega debe incluir al menos un medicamento.');
         }
 
-        $sedeId = (int) ($datos['sede_id'] ?? $usuario->sede_id);
-        if ($sedeId <= 0 || ! Sede::query()->whereKey($sedeId)->where('activa', true)->exists()) {
-            throw new InvalidArgumentException('Debes indicar una sede de atención activa.');
+        // La sede de la entrega es siempre la del ticket: el paciente reclama
+        // donde se generó. No se usa usuario.sede_id (puede rotar de sede).
+        $sedeTicket = Sede::query()->whereKey($ticket->sedeId)->first();
+        if ($sedeTicket === null) {
+            throw new InvalidArgumentException('El ticket no tiene una sede válida asociada.');
         }
+
+        if (array_key_exists('sede_id', $datos)
+            && $datos['sede_id'] !== null
+            && (int) $datos['sede_id'] !== (int) $ticket->sedeId) {
+            throw new InvalidArgumentException(
+                'Este ticket pertenece a '.$this->etiquetaSede($sedeTicket).' y debe ser atendido en esa sede.'
+            );
+        }
+
+        if (! $sedeTicket->activa) {
+            throw new InvalidArgumentException(
+                'La sede del ticket («'.$sedeTicket->nombre.'») no está activa; no se puede registrar la entrega.'
+            );
+        }
+
+        $sedeId = (int) $ticket->sedeId;
 
         $originales = collect($ticket->items)->keyBy(fn ($i) => (string) $i->id);
         $itemsNormalizados = [];
@@ -219,7 +237,10 @@ class RegistrarEntrega
             ]);
 
             if ($estadoNuevo === DomicilioEnvio::ESTADO_ENTREGADO) {
-                $envio->entrega->update(['estado' => Entrega::ESTADO_COMPLETADA]);
+                // El paquete llegó: eso no implica que el ticket esté completo.
+                // El estado de la entrega (y vía el listener, el del ticket)
+                // se deduce de los EntregaItem, no del estado logístico.
+                $envio->entrega->recalcularEstado();
             }
 
             if (in_array($estadoNuevo, [DomicilioEnvio::ESTADO_NO_ENTREGADO, DomicilioEnvio::ESTADO_NOVEDAD], true)) {
@@ -298,6 +319,24 @@ class RegistrarEntrega
             'resultado' => $resultado,
             'motivo' => $motivo,
         ];
+    }
+
+    /**
+     * Texto para mensajes: «la Sede Centro», sin duplicar la palabra Sede.
+     */
+    private function etiquetaSede(Sede $sede): string
+    {
+        $nombre = trim((string) $sede->nombre);
+
+        if ($nombre === '') {
+            return 'la sede indicada en el ticket';
+        }
+
+        if (preg_match('/^sede\b/iu', $nombre) === 1) {
+            return 'la '.$nombre;
+        }
+
+        return 'la Sede '.$nombre;
     }
 
     private function guardarFirma(Entrega $entrega, string $contenido): string

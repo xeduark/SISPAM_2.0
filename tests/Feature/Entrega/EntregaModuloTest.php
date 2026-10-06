@@ -16,6 +16,7 @@ use App\Services\Entrega\RegistrarEntrega;
 use App\Services\Entrega\SaldoTicket;
 use App\Services\Ticket\TicketConsultaMock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -40,6 +41,8 @@ class EntregaModuloTest extends TestCase
 
     public function test_el_mock_de_ticket_devuelve_medicamentos(): void
     {
+        $usuario = User::factory()->administrador()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-1001');
 
         $this->assertNotNull($ticket);
@@ -53,6 +56,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-1001');
 
         $entrega = app(RegistrarEntrega::class)->handle($ticket, $usuario, [
@@ -74,6 +78,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-MIX');
 
         $entrega = app(RegistrarEntrega::class)->handle($ticket, $usuario, [
@@ -103,6 +108,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-REAT');
         $registrar = app(RegistrarEntrega::class);
 
@@ -158,6 +164,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-DONE');
         $registrar = app(RegistrarEntrega::class);
 
@@ -185,6 +192,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-OVER');
         $registrar = app(RegistrarEntrega::class);
 
@@ -222,6 +230,7 @@ class EntregaModuloTest extends TestCase
     public function test_presencial_exige_receptor_y_firma(): void
     {
         $usuario = User::factory()->administrador()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SIG');
 
         $this->expectException(\InvalidArgumentException::class);
@@ -236,6 +245,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-DOM');
         $registrar = app(RegistrarEntrega::class);
 
@@ -256,6 +266,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-DOM2');
         $registrar = app(RegistrarEntrega::class);
 
@@ -276,6 +287,7 @@ class EntregaModuloTest extends TestCase
     {
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-UI');
 
         app(RegistrarEntrega::class)->handle($ticket, $usuario, [
@@ -292,7 +304,72 @@ class EntregaModuloTest extends TestCase
             ->set('busqueda.ticket_numero', 'T-UI')
             ->call('buscar')
             ->assertSet('ticketBloqueado', true)
-            ->assertSee('ya fue dispensado completamente');
+            ->assertSee('Dispensación bloqueada')
+            ->assertSee('ya fue dispensado completamente')
+            ->assertDontSee('No se encontró un ticket disponible')
+            ->assertDontSee('Confirmar y registrar entrega');
+    }
+
+    public function test_pantalla_bloquea_ticket_ya_entregado_sin_decir_sin_ticket(): void
+    {
+        $usuario = User::factory()->administrador()->create();
+        Paciente::factory()->create();
+        $this->actingAs($usuario);
+
+        $base = app(TicketConsultaInterface::class)->buscarPorNumero('T-ENTREGADO');
+        $this->assertNotNull($base);
+
+        $this->app->instance(TicketConsultaInterface::class, new class($base) implements TicketConsultaInterface
+        {
+            public function __construct(private $base) {}
+
+            public function buscarPorNumero(string $numero): ?\App\Contracts\Ticket\Dto\TicketDto
+            {
+                return new \App\Contracts\Ticket\Dto\TicketDto(
+                    numero: $this->base->numero,
+                    estado: 'entregado',
+                    sedeId: $this->base->sedeId,
+                    paciente: $this->base->paciente,
+                    items: $this->base->items,
+                    altoCosto: $this->base->altoCosto,
+                    turno: $this->base->turno,
+                );
+            }
+        });
+
+        Livewire::test(AtenderEntrega::class)
+            ->set('busqueda.ticket_numero', 'T-ENTREGADO')
+            ->call('buscar')
+            ->assertSet('ticketBloqueado', true)
+            ->assertSet('ticket.numero', 'T-ENTREGADO')
+            ->assertSee('Dispensación bloqueada')
+            ->assertSee('ya fue dispensado completamente')
+            ->assertDontSee('No se encontró un ticket disponible')
+            ->assertDontSee('Confirmar y registrar entrega')
+            ->call('registrar')
+            ->assertSet('ticketBloqueado', true);
+
+        $this->assertDatabaseCount('entregas', 0);
+    }
+
+    public function test_contenido_firma_lee_ruta_en_disco_local(): void
+    {
+        Storage::fake('local');
+        $usuario = User::factory()->administrador()->create();
+        $this->actingAs($usuario);
+
+        $ruta = 'soportes/firmas-entrega/tmp/firma-regresion.png';
+        Storage::disk('local')->put($ruta, 'bytes-firma-ok');
+
+        $page = new AtenderEntrega;
+        $ref = new \ReflectionMethod(AtenderEntrega::class, 'contenidoFirma');
+        $ref->setAccessible(true);
+
+        $contenido = $ref->invoke($page, ['uuid-demo' => $ruta]);
+
+        $this->assertSame('bytes-firma-ok', $contenido);
+        $this->assertNull($ref->invoke($page, null));
+        $this->assertNull($ref->invoke($page, []));
     }
 
     public function test_permisos_del_modulo_entrega(): void
@@ -322,43 +399,76 @@ class EntregaModuloTest extends TestCase
         $this->get('/admin/domicilio-envios')->assertOk();
     }
 
-    public function test_entrega_conserva_sede_seleccionada_aunque_cambie_la_del_usuario(): void
+    public function test_entrega_conserva_sede_del_ticket_aunque_cambie_la_del_usuario(): void
     {
         $sedeCentro = Sede::factory()->create(['nombre' => 'Sede Centro', 'activa' => true]);
         $sedeNorte = Sede::factory()->create(['nombre' => 'Sede Norte', 'activa' => true]);
         $usuario = User::factory()->administrador()->create(['sede_id' => $sedeCentro->id]);
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SEDE');
+        $this->assertSame($sedeCentro->id, $ticket->sedeId);
 
         $entrega = app(RegistrarEntrega::class)->handle($ticket, $usuario, [
             'tipo' => Entrega::TIPO_PRESENCIAL,
-            'sede_id' => $sedeNorte->id,
+            'sede_id' => $sedeCentro->id,
             'receptor_nombre' => 'Receptor',
             'receptor_documento' => '1',
             'firma_contenido' => 'firma',
             'items' => $this->itemsCompletos($ticket),
         ]);
 
-        $this->assertSame($sedeNorte->id, $entrega->sede_id);
-        $this->assertSame('Sede Norte', $entrega->sede->nombre);
+        $this->assertSame($sedeCentro->id, $entrega->sede_id);
+        $this->assertSame('Sede Centro', $entrega->sede->nombre);
 
-        // El usuario vuelve a su sede habitual; la entrega histórica no cambia.
-        $usuario->update(['sede_id' => $sedeCentro->id]);
+        // El usuario pasa a Norte; la entrega histórica sigue en Centro.
+        $usuario->update(['sede_id' => $sedeNorte->id]);
         $entrega->refresh()->load('sede');
 
-        $this->assertSame($sedeNorte->id, $entrega->sede_id);
-        $this->assertSame('Sede Norte', $entrega->sede->nombre);
-        $this->assertSame($sedeCentro->id, $usuario->fresh()->sede_id);
+        $this->assertSame($sedeCentro->id, $entrega->sede_id);
+        $this->assertSame('Sede Centro', $entrega->sede->nombre);
+        $this->assertSame($sedeNorte->id, $usuario->fresh()->sede_id);
     }
 
-    public function test_no_permite_sede_inactiva(): void
+    public function test_no_permite_registrar_entrega_en_sede_distinta_a_la_del_ticket(): void
     {
-        $sedeInactiva = Sede::factory()->inactiva()->create();
-        $usuario = User::factory()->administrador()->create();
+        $sedeCentro = Sede::factory()->create(['nombre' => 'Sede Centro', 'activa' => true]);
+        $sedeNorte = Sede::factory()->create(['nombre' => 'Sede Norte', 'activa' => true]);
+        $usuario = User::factory()->administrador()->create(['sede_id' => $sedeCentro->id]);
+        Paciente::factory()->create();
+        $this->actingAs($usuario);
+        $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SEDE-CROSS');
+
+        try {
+            app(RegistrarEntrega::class)->handle($ticket, $usuario, [
+                'tipo' => Entrega::TIPO_PRESENCIAL,
+                'sede_id' => $sedeNorte->id,
+                'receptor_nombre' => 'A',
+                'receptor_documento' => '1',
+                'firma_contenido' => 'f',
+                'items' => $this->itemsCompletos($ticket),
+            ]);
+            $this->fail('Debió rechazar la entrega en sede distinta.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString(
+                'Este ticket pertenece a la Sede Centro y debe ser atendido en esa sede.',
+                $e->getMessage(),
+            );
+        }
+
+        $this->assertDatabaseCount('entregas', 0);
+    }
+
+    public function test_no_permite_sede_inactiva_del_ticket(): void
+    {
+        $sedeInactiva = Sede::factory()->inactiva()->create(['nombre' => 'Sede Cerrada']);
+        $usuario = User::factory()->administrador()->create(['sede_id' => $sedeInactiva->id]);
+        Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SEDE-OFF');
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('sede de atención activa');
+        $this->expectExceptionMessage('no está activa');
 
         app(RegistrarEntrega::class)->handle($ticket, $usuario, [
             'tipo' => Entrega::TIPO_PRESENCIAL,

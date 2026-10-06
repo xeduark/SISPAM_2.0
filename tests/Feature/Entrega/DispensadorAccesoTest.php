@@ -94,7 +94,9 @@ class DispensadorAccesoTest extends TestCase
 
         $usuario = User::factory()->administrador()->create();
         Paciente::factory()->create();
+        $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SALDO');
+        $this->assertNotNull($ticket);
         $original = (float) $ticket->items[0]->cantidad;
 
         app(RegistrarEntrega::class)->handle($ticket, $usuario, [

@@ -11,7 +11,6 @@ use App\Models\Paciente;
 use App\Models\Soporte;
 use App\Models\Ticket;
 use App\Services\Savia\SaviaClient;
-use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists;
@@ -1016,8 +1015,13 @@ class PacienteResource extends Resource
         // Por si queda en algún formulario viejo: el campo ya no se pregunta.
         unset($data['orden_medica'], $data['alto_costo_oncologico']);
 
+        // FileUpload a veces deja [uuid => ruta] si aún no se deshidrató.
+        if (is_array($orden)) {
+            $orden = collect($orden)->filter(fn ($v) => filled($v))->first();
+        }
+
         return blank($orden) ? null : [
-            'orden_medica' => $orden,
+            'orden_medica' => (string) $orden,
             'cargado_por' => auth()->id(),
         ];
     }
@@ -1030,28 +1034,19 @@ class PacienteResource extends Resource
      */
     public static function motivoSugerido(Forms\Get $get): ?string
     {
-        $nacimiento = $get('fecha_nacimiento');
-
-        if (filled($nacimiento)) {
-            try {
-                if (Carbon::parse($nacimiento)->age >= Ticket::EDAD_ADULTO_MAYOR) {
-                    return 'adulto_mayor';
-                }
-            } catch (\Throwable) {
-                // Una fecha ilegible no debe romper el formulario.
-            }
-        }
-
-        $discapacidad = Paciente::normalizarTexto((string) $get('discapacidad'));
-
-        return ($discapacidad !== '' && $discapacidad !== 'no') ? 'discapacidad' : null;
+        // La regla vive en `Ticket`: Orientación sugiere exactamente lo mismo.
+        return Ticket::motivoPrioridadSugerido(
+            $get('fecha_nacimiento'),
+            $get('discapacidad'),
+        );
     }
 
     public static function prioridadSugerida(Forms\Get $get): string
     {
-        return static::motivoSugerido($get) !== null
-            ? Ticket::PRIORIDAD_PREFERENCIAL
-            : Ticket::PRIORIDAD_NORMAL;
+        return Ticket::prioridadSugeridaPara(
+            $get('fecha_nacimiento'),
+            $get('discapacidad'),
+        );
     }
 
     /**
