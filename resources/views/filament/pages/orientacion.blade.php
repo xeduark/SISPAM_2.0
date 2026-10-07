@@ -240,19 +240,23 @@
 
                         {{-- Si ya tiene una visita viva, el botón lo dice: generar
                              otro turno es una decisión, no el camino por defecto. --}}
-                        <div class="sispam-orientacion__generar">
+                        <div
+                            class="sispam-orientacion__generar"
+                            wire:loading.class="pointer-events-none opacity-60"
+                            wire:target="generarTicket,generarDeTodosModos,sumarAVisitaAbierta"
+                        >
                             <x-filament::button
                                 type="submit"
                                 size="xl"
                                 icon="heroicon-m-ticket"
                                 :color="$this->visitaAbierta ? 'gray' : 'primary'"
                                 wire:loading.attr="disabled"
-                                wire:target="{{ $accionDeGenerar }}"
+                                wire:target="generarTicket,generarDeTodosModos,sumarAVisitaAbierta"
                             >
-                                <span wire:loading.remove wire:target="{{ $accionDeGenerar }}">
+                                <span wire:loading.remove wire:target="generarTicket,generarDeTodosModos,sumarAVisitaAbierta">
                                     {{ $this->visitaAbierta ? 'Generar otro ticket de todos modos' : 'Generar ticket' }}
                                 </span>
-                                <span wire:loading wire:target="{{ $accionDeGenerar }}">Generando…</span>
+                                <span wire:loading wire:target="generarTicket,generarDeTodosModos,sumarAVisitaAbierta">Generando…</span>
                             </x-filament::button>
                         </div>
                     </form>

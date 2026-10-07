@@ -591,6 +591,18 @@ class Orientacion extends Page implements AvisaSobreSavia
             return;
         }
 
+        // Reenvío de la misma ruta de archivo: no se creó soporte ni turno nuevo.
+        if ($resultado->ordenesGuardadas === 0) {
+            Notification::make()
+                ->title('Fórmula ya registrada')
+                ->body("Esta fórmula ya tiene un ticket generado: {$resultado->ticket->turno}.")
+                ->warning()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
         $hojas = $resultado->ordenesGuardadas === 1
             ? '1 hoja de la fórmula'
             : "{$resultado->ordenesGuardadas} hojas de la fórmula";

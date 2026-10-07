@@ -3,6 +3,7 @@
 namespace App\Services\Orientacion;
 
 use App\Models\Paciente;
+use App\Models\Soporte;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\Tickets\GenerarTicket;
@@ -17,9 +18,10 @@ use RuntimeException;
  * contacto que confirmó de viva voz, cuelga las fórmulas y abre el ticket.
  *
  * Desde que el asistente de Pacientes dejó de abrir visitas, **este es el
- * único sitio donde nace una**. Eso es lo que permite tener una sola regla
- * para los duplicados: en vez de una idempotencia silenciosa, la pantalla
- * avisa cuando el paciente ya tiene una visita viva y deja decidir.
+ * único sitio donde nace una**. La pantalla avisa si hay una visita viva
+ * (`VisitaAbierta`); además, la misma ruta de archivo (`orden_medica`) no
+ * genera otro soporte ni otro turno: cada upload nuevo de Filament usa un
+ * ULID distinto, así que reenviar la misma ruta es reenvío accidental.
  */
 class RegistrarVisita
 {
@@ -45,23 +47,34 @@ class RegistrarVisita
         return DB::transaction(function () use ($atributos, $contacto, $ordenes, $datosTicket, $usuario, $visitaExistente): ResultadoVisita {
             $paciente = $this->guardarPaciente($atributos, $contacto, $usuario);
 
+            // Dos Guardar casi a la vez sobre el mismo paciente no deben abrir
+            // dos visitas con la misma fórmula.
+            Paciente::query()->whereKey($paciente->getKey())->lockForUpdate()->first();
+
+            [$rutasNuevas, $soportesYaProcesados] = $this->separarOrdenesNuevas($ordenes);
+
             if ($visitaExistente !== null) {
-                // Sumar hojas a la visita que ya está abierta: el paciente no
-                // vuelve a hacer fila, así que no se consume otro turno.
                 $this->comprobarQueLaVisitaEsDelPaciente($visitaExistente, $paciente, $usuario);
 
                 $ticket = $visitaExistente;
                 $motivo = null;
                 $desde = (int) $ticket->soportes()->max('pagina');
+                $turnoNuevo = false;
+            } elseif ($rutasNuevas === [] && $soportesYaProcesados !== []) {
+                // Todas las rutas ya estaban: no se consume otro turno.
+                $ticket = $this->ticketDeSoportesExistentes($soportesYaProcesados);
+                $motivo = null;
+                $desde = 0;
+                $turnoNuevo = false;
             } else {
                 [$ticket, $motivo] = $this->abrirTicket($paciente, $datosTicket, $usuario);
                 $desde = 0;
+                $turnoNuevo = true;
             }
 
-            // Un soporte por hoja. La página es la posición en que quedaron
-            // tras reordenarlas en pantalla: ese orden es el de lectura. Al
-            // sumar a una visita abierta se sigue contando donde quedó.
-            foreach (array_values($ordenes) as $posicion => $ruta) {
+            $creadas = 0;
+
+            foreach (array_values($rutasNuevas) as $posicion => $ruta) {
                 $paciente->soportes()->create([
                     'ticket_id' => $ticket?->getKey(),
                     'orden_medica' => $ruta,
@@ -69,15 +82,16 @@ class RegistrarVisita
                     'mime' => $this->mimeDe($ruta),
                     'cargado_por' => $usuario->getKey(),
                 ]);
+                $creadas++;
             }
 
             return new ResultadoVisita(
                 paciente: $paciente,
                 ticket: $ticket,
                 pacienteNuevo: $paciente->wasRecentlyCreated,
-                ordenesGuardadas: count($ordenes),
+                ordenesGuardadas: $creadas,
                 motivoSinTicket: $motivo,
-                turnoNuevo: $visitaExistente === null,
+                turnoNuevo: $turnoNuevo && $creadas > 0,
             );
         });
     }
@@ -95,6 +109,8 @@ class RegistrarVisita
     public function completarFormulaSinTurno(Paciente $paciente, array $datosTicket, User $usuario): ResultadoVisita
     {
         return DB::transaction(function () use ($paciente, $datosTicket, $usuario): ResultadoVisita {
+            Paciente::query()->whereKey($paciente->getKey())->lockForUpdate()->first();
+
             $hojas = $paciente->formulasSinTurno();
 
             if ($hojas->isEmpty()) {
@@ -120,6 +136,54 @@ class RegistrarVisita
                 motivoSinTicket: $motivo,
             );
         });
+    }
+
+    /**
+     * Separa rutas nuevas de las que ya tienen un Soporte (misma orden en disco).
+     *
+     * @param  list<string>  $ordenes
+     * @return array{0: list<string>, 1: list<Soporte>}
+     */
+    private function separarOrdenesNuevas(array $ordenes): array
+    {
+        $rutasNuevas = [];
+        $existentes = [];
+        $vistas = [];
+
+        foreach ($ordenes as $ruta) {
+            if (! is_string($ruta) || $ruta === '' || isset($vistas[$ruta])) {
+                continue;
+            }
+
+            $vistas[$ruta] = true;
+
+            $soporte = Soporte::query()
+                ->where('orden_medica', $ruta)
+                ->lockForUpdate()
+                ->first();
+
+            if ($soporte) {
+                $existentes[] = $soporte;
+            } else {
+                $rutasNuevas[] = $ruta;
+            }
+        }
+
+        return [$rutasNuevas, $existentes];
+    }
+
+    /**
+     * @param  list<Soporte>  $soportes
+     */
+    private function ticketDeSoportesExistentes(array $soportes): ?Ticket
+    {
+        foreach ($soportes as $soporte) {
+            if ($soporte->ticket_id) {
+                return Ticket::query()->find($soporte->ticket_id);
+            }
+        }
+
+        return null;
     }
 
     /**
