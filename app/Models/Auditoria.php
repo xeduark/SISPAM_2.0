@@ -49,6 +49,9 @@ class Auditoria extends Model
      */
     public const ACCION_VIO_GALERIA = 'vio_galeria';
 
+    /** Alguien se mudó a otra sede desde el selector de la barra. */
+    public const ACCION_CAMBIO_DE_SEDE = 'cambio_de_sede';
+
     /** El cierre del día venció los tickets que nadie alcanzó a atender. */
     public const ACCION_CERRO_DIA = 'cerro_dia';
 
@@ -65,6 +68,7 @@ class Auditoria extends Model
         self::ACCION_ABRIO_ACTA_ENTREGA => 'Abrió un acta de entrega',
         self::ACCION_RECTIFICO_TRANSCRIPCION => 'Rectificó una transcripción',
         self::ACCION_VIO_GALERIA => 'Vio la galería de fórmulas',
+        self::ACCION_CAMBIO_DE_SEDE => 'Cambió de sede',
         self::ACCION_CERRO_DIA => 'Cerró el día',
     ];
 
@@ -81,6 +85,7 @@ class Auditoria extends Model
         self::ACCION_ABRIO_ACTA_ENTREGA => 'warning',
         self::ACCION_RECTIFICO_TRANSCRIPCION => 'warning',
         self::ACCION_VIO_GALERIA => 'gray',
+        self::ACCION_CAMBIO_DE_SEDE => 'info',
         self::ACCION_CERRO_DIA => 'warning',
     ];
 

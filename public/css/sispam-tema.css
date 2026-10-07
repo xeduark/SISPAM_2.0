@@ -643,3 +643,43 @@ button.sispam-acta__check[disabled] {
         justify-content: center;
     }
 }
+
+/*
+ * Selector de sede de la barra superior (§8, §17).
+ *
+ * Dice en qué sede está trabajando quien entró. Solo aparece si tiene más de
+ * una asignada.
+ */
+.sispam-selector-sede {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 16rem;
+    padding: 6px 12px;
+    border: 1px solid var(--sispam-border);
+    border-radius: 999px;
+    background: var(--sispam-card-soft);
+    color: var(--sispam-text);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--sispam-transition);
+}
+
+.sispam-selector-sede:hover {
+    border-color: rgb(var(--primary-600));
+}
+
+.sispam-selector-sede__nombre {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Teléfonos (§20): solo el código de la sede, para no comerse la barra */
+@media (max-width: 600px) {
+    .sispam-selector-sede {
+        max-width: 9rem;
+        padding-inline: 8px;
+    }
+}

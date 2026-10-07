@@ -289,6 +289,53 @@ En su lugar queda **una línea por entrada a la galería** (`vio_galeria`, desde
 una en `OrdenMedicaController`. Del rastro, como siempre, solo el documento del
 paciente: ni su nombre, ni la ruta del archivo.
 
+## A dónde va la fórmula después
+
+Generar el ticket no termina el recorrido: cada hoja entra sola a la cola del
+**módulo de transcripción**, que la lee con IA y propone los medicamentos.
+
+```
+Orientación genera el ticket
+        │
+        ├── un soporte por hoja  ──►  Soporte::created  (AppServiceProvider)
+        │                                    │
+        │                                    ├── crea la fila en `transcripciones`
+        │                                    └── despacha LeerFormula (afterCommit)
+        │
+        └── el ticket, con su turno          │
+                                             ▼
+                              la transcriptora revisa y confirma
+                                             │
+                                             ▼
+                                   orden de entrega  ──►  farmacia alista
+```
+
+**Orientación no llama a transcripción.** El puente escucha el modelo
+`Soporte`, así que esta pantalla no sabe que transcripción existe y
+transcripción no sabe de esta pantalla. Lo único que las une es que una crea
+soportes y la otra los escucha. Ver `docs/transcripcion.md`.
+
+Los soportes se crean **dentro de la transacción** de `RegistrarVisita` y el
+trabajo se despacha con `afterCommit()`, así que si el registro se revierte no
+queda ninguna lectura encolada a medias.
+
+### El soporte que adopta un ticket después
+
+Cuando se completa una fórmula que había quedado sin turno, el soporte cambia
+de dueño con un `update`, no con un `create`: no vuelve a pasar por el
+enganche, y su transcripción se quedaría apuntando a ningún ticket.
+
+Por eso hay un segundo enganche, `Soporte::updated`, que le pasa el ticket a la
+transcripción cuando el soporte adopta uno. Transcripción ya era defensiva en
+los dos sitios donde más dolería —la orden de entrega y la pantalla de revisión
+caen de vuelta al ticket del soporte—, así que la fórmula llegaba igual a
+farmacia; lo que se arreglaba mal era su bandeja, que mostraba la columna del
+turno vacía y dejaba a quien revisa sin saber de qué paciente de la fila se
+trata.
+
+Se escribe en masa a propósito: `ticket_id` no está en
+`Transcripcion::CAMPOS_AUDITADOS`, y esto corrige un enlace, no registra la
+decisión de nadie.
 ## Lo que todavía no hace
 
 - **Las fórmulas no se ven en el modal de Alistar.** Quedó fuera de alcance:
@@ -331,4 +378,10 @@ Y 11 en `FormulaSinTurnoTest`: el aviso, que solo ofrezca la carga más
 reciente, la recuperación sin volver a tomar las fotos, la renumeración, la
 prioridad de la pantalla, y que si la sede sigue sin colas no se pierda nada.
 
-Ninguna toca el servicio real: `Http::fake()` responde en lugar de Savia.
+Y 5 en `PuenteConTranscripcionTest`: que cada hoja entre a la cola con su
+ticket, que tres hojas den tres lecturas del mismo ticket, que sumar a una
+visita abierta también las mande, que sin colas se lea igual, y que al
+completar el turno la transcripción quede colgada de él.
+
+Ninguna toca el servicio real: `Http::fake()` responde en lugar de Savia, y
+`Bus::fake()` en lugar de la lectura con IA.
