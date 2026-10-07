@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\ControlaPermisos;
 use App\Filament\Resources\UserResource\Pages;
+use App\Models\Sede;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -56,9 +57,11 @@ class UserResource extends Resource
                     ->nullable()
                     ->unique(ignoreRecord: true)
                     ->maxLength(255),
+                // Con su código: «PREMIUM PLAZA (PRP)». Buscar «PRP» la encuentra.
                 Forms\Components\Select::make('sede_id')
                     ->label('Sede')
-                    ->relationship('sede', 'nombre')
+                    ->options(fn (): array => Sede::opciones())
+                    ->getOptionLabelUsing(fn ($value): ?string => Sede::find($value)?->etiqueta)
                     ->required()
                     ->searchable()
                     ->preload(),
@@ -94,6 +97,7 @@ class UserResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede')
+                    ->formatStateUsing(fn (User $record): string => $record->sede?->etiqueta ?? '—')
                     ->sortable(),
                 Tables\Columns\IconColumn::make('activo')
                     ->boolean(),
@@ -110,9 +114,9 @@ class UserResource extends Resource
             ])
             ->defaultSort('nombre', 'asc')
             ->filters([
-                Tables\Filters\SelectFilter::make('sede')
+                Tables\Filters\SelectFilter::make('sede_id')
                     ->label('Sede')
-                    ->relationship('sede', 'nombre')
+                    ->options(fn (): array => Sede::opciones())
                     ->searchable()
                     ->preload(),
                 Tables\Filters\TernaryFilter::make('activo')

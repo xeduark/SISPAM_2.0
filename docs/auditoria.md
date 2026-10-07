@@ -58,6 +58,7 @@ CC 1000873458». Nunca su nombre.
 | `creo` / `actualizo` / `elimino` | Automático, desde el trait `Auditable`. |
 | `consulto_savia` | Al consultar un documento, desde el formulario de pacientes y desde «Consultar paciente». Guarda el documento consultado y si hubo resultado, nunca los datos del afiliado. |
 | `descargo_orden` | Reservado para la fase 2 (ruta protegida de la orden médica). |
+| `cerro_dia` | El cierre del día venció tickets. **Una línea por sede y por corrida**, no una por ticket: el `update` masivo no dispara el trait a propósito. A nombre de «Sistema», porque lo corre una tarea programada. Ver `docs/cierre-del-dia.md`. |
 
 ## Dónde se ve
 
@@ -122,6 +123,18 @@ Auditoria::registrar(
 Si el registro falla, **no interrumpe la operación del usuario**: se reporta la
 excepción y el flujo sigue. Una auditoría caída no puede dejar sin atender a un
 paciente.
+
+La sede sale sola de la del usuario. Cuando el hecho pasa en otra sede —o no
+hay usuario, como en una tarea programada— se pasa aparte:
+
+```php
+Auditoria::registrar(
+    accion: Auditoria::ACCION_CERRO_DIA,
+    descripcion: "Cerró el día hasta {$hasta} en {$sede->nombre}: …",
+    entidadTipo: 'ticket',
+    sedeId: $sede->id,
+);
+```
 
 ## Pendiente
 

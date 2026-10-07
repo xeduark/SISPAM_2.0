@@ -2,44 +2,71 @@
 
 namespace App\Services\Turnos;
 
-use App\Models\Cola;
 use App\Models\ContadorTurno;
+use App\Models\Sede;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Entrega el siguiente turno de una cola: «A-023».
+ * Entrega el siguiente turno de una sede: «0060».
  *
- * El consecutivo es **por cola y por día**, así que cada mañana vuelve a
- * empezar en 1 y dos colas de la misma sede no se pisan.
+ * El consecutivo es **por sede y por día**, así que cada mañana vuelve a
+ * empezar en 1.
+ *
+ * ## Por qué numera la sede y no la cola
+ *
+ * Mientras el turno llevaba el prefijo de la cola, que cada una contara aparte
+ * estaba bien: `A-0060` y `B-0060` eran distintos. Sin prefijo dejan de serlo,
+ * y `TicketConsultaDb::porTurnoDeHoy()` busca el turno dentro de la sede: con
+ * dos colas contando por su lado se encontraría dos tickets `0060` el mismo
+ * día y no sabría cuál es.
+ *
+ * La cola se sigue escogiendo igual —alto costo va a la suya—, pero ya no
+ * numera.
+ *
+ * ## Por qué hay una tabla de contadores
  *
  * Varios orientadores piden turno al mismo tiempo, así que el contador se
  * bloquea dentro de una transacción (`lockForUpdate`). El índice único
- * `(cola_id, fecha)` es la segunda red: aunque dos procesos intenten crear la
+ * `(sede_id, fecha)` es la segunda red: aunque dos procesos intenten crear la
  * fila del día a la vez, solo una queda.
  */
 class GeneradorDeTurnos
 {
+    /** Dígitos del consecutivo: «0060». Es como sale en el ticket impreso. */
+    public const DIGITOS = 4;
+
     /**
-     * Siguiente turno de la cola, ya formateado.
+     * Siguiente turno de la sede, ya formateado.
      */
-    public function siguiente(Cola $cola, ?CarbonInterface $fecha = null): string
+    public function siguiente(Sede $sede, ?CarbonInterface $fecha = null): string
     {
-        return $cola->formatearTurno($this->siguienteConsecutivo($cola, $fecha));
+        return static::formatear($this->siguienteConsecutivo($sede, $fecha));
     }
 
     /**
-     * El número crudo, sin prefijo ni ceros.
+     * El consecutivo como lo ve el paciente: cuatro dígitos con ceros delante.
+     *
+     * Pasado el 9999 sigue creciendo («10000») en vez de cortarse: es mejor un
+     * turno de cinco cifras que dos pacientes con el mismo número.
      */
-    public function siguienteConsecutivo(Cola $cola, ?CarbonInterface $fecha = null): int
+    public static function formatear(int $consecutivo): string
+    {
+        return str_pad((string) $consecutivo, self::DIGITOS, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * El número crudo, sin ceros delante.
+     */
+    public function siguienteConsecutivo(Sede $sede, ?CarbonInterface $fecha = null): int
     {
         $dia = ($fecha ?? now())->toDateString();
 
-        return DB::transaction(function () use ($cola, $dia): int {
+        return DB::transaction(function () use ($sede, $dia): int {
             // `insertOrIgnore` deja la fila del día lista sin reventar si otro
             // proceso se adelantó: el índice único decide.
             DB::table('contadores_turno')->insertOrIgnore([
-                'cola_id' => $cola->getKey(),
+                'sede_id' => $sede->getKey(),
                 'fecha' => $dia,
                 'ultimo' => 0,
                 'created_at' => now(),
@@ -47,7 +74,7 @@ class GeneradorDeTurnos
             ]);
 
             $contador = ContadorTurno::query()
-                ->where('cola_id', $cola->getKey())
+                ->where('sede_id', $sede->getKey())
                 ->where('fecha', $dia)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -59,12 +86,12 @@ class GeneradorDeTurnos
     }
 
     /**
-     * Cuántos turnos lleva entregados la cola en el día, sin consumir uno.
+     * Cuántos turnos lleva entregados la sede en el día, sin consumir uno.
      */
-    public function entregadosHoy(Cola $cola, ?CarbonInterface $fecha = null): int
+    public function entregadosHoy(Sede $sede, ?CarbonInterface $fecha = null): int
     {
         return (int) ContadorTurno::query()
-            ->where('cola_id', $cola->getKey())
+            ->where('sede_id', $sede->getKey())
             ->whereDate('fecha', ($fecha ?? now())->toDateString())
             ->value('ultimo');
     }

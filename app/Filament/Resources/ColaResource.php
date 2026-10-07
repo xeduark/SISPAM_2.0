@@ -15,7 +15,12 @@ use Filament\Tables;
 use Filament\Tables\Table;
 
 /**
- * Colas de atención por sede. El prefijo arma el turno del paciente: «A-023».
+ * Colas de atención por sede.
+ *
+ * El turno del paciente ya no lleva prefijo —es solo el consecutivo de la
+ * sede, «0060»—, así que el prefijo de la cola quedó como su etiqueta corta:
+ * es lo que distingue «Dispensación general (A)» de «Alto costo (B)» en el
+ * filtro de Llamar turnos.
  */
 class ColaResource extends Resource
 {
@@ -50,8 +55,8 @@ class ColaResource extends Resource
                     ->required()
                     ->maxLength(80),
                 Forms\Components\TextInput::make('prefijo')
-                    ->label('Prefijo del turno')
-                    ->helperText('Una a tres letras. Con el prefijo «A» los turnos salen A-001, A-002…')
+                    ->label('Etiqueta corta')
+                    ->helperText('Una a tres letras para distinguir la cola en las pantallas: «Dispensación general (A)». El turno del paciente ya no la lleva.')
                     ->required()
                     ->alpha()
                     ->maxLength(3)
@@ -81,6 +86,7 @@ class ColaResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede')
+                    ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—')
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('nombre')
@@ -89,10 +95,9 @@ class ColaResource extends Resource
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('prefijo')
-                    ->label('Turnos')
+                    ->label('Etiqueta')
                     ->badge()
-                    ->color('primary')
-                    ->formatStateUsing(fn (string $state, Cola $record): string => $record->formatearTurno(1).'…'),
+                    ->color('primary'),
                 Tables\Columns\TextColumn::make('orden')
                     ->label('Orden')
                     ->sortable()
@@ -105,7 +110,7 @@ class ColaResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('sede_id')
                     ->label('Sede')
-                    ->options(fn (): array => Sede::orderBy('nombre')->pluck('nombre', 'id')->all())
+                    ->options(fn (): array => Sede::opciones())
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 Tables\Filters\TernaryFilter::make('activa')
                     ->label('Estado')
@@ -123,10 +128,14 @@ class ColaResource extends Resource
 
     /**
      * Una cola que ya entregó turnos es historia: se desactiva, no se borra.
+     *
+     * Lo dicen sus tickets, no el contador: el contador pasó a ser de la sede,
+     * así que una cola recién creada en una sede que ya atendió hoy aparecería
+     * como usada sin haber entregado nada.
      */
     public static function cancelarSiYaEntregoTurnos(object $action, Cola $cola): void
     {
-        if (! $cola->contadores()->exists()) {
+        if (! $cola->tickets()->exists()) {
             return;
         }
 

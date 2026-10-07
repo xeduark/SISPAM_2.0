@@ -40,6 +40,18 @@ class Auditoria extends Model
 
     public const ACCION_RECTIFICO_TRANSCRIPCION = 'rectifico_transcripcion';
 
+    /**
+     * Entró a la galería de fórmulas de un paciente.
+     *
+     * Es distinto de abrir una: ver las miniaturas no es leer la fórmula. Se
+     * separan para que el rastro de quién sí la leyó no quede enterrado entre
+     * una línea por cada imagen que se pintó en pantalla.
+     */
+    public const ACCION_VIO_GALERIA = 'vio_galeria';
+
+    /** El cierre del día venció los tickets que nadie alcanzó a atender. */
+    public const ACCION_CERRO_DIA = 'cerro_dia';
+
     /** Etiquetas en español para mostrar la acción en pantalla. */
     public const ACCIONES = [
         self::ACCION_INGRESO => 'Ingresó',
@@ -52,6 +64,8 @@ class Auditoria extends Model
         self::ACCION_IMPRIMIO_ORDEN_ENTREGA => 'Abrió una orden de entrega',
         self::ACCION_ABRIO_ACTA_ENTREGA => 'Abrió un acta de entrega',
         self::ACCION_RECTIFICO_TRANSCRIPCION => 'Rectificó una transcripción',
+        self::ACCION_VIO_GALERIA => 'Vio la galería de fórmulas',
+        self::ACCION_CERRO_DIA => 'Cerró el día',
     ];
 
     /** Color del badge por acción, dentro de la paleta institucional. */
@@ -66,6 +80,8 @@ class Auditoria extends Model
         self::ACCION_IMPRIMIO_ORDEN_ENTREGA => 'warning',
         self::ACCION_ABRIO_ACTA_ENTREGA => 'warning',
         self::ACCION_RECTIFICO_TRANSCRIPCION => 'warning',
+        self::ACCION_VIO_GALERIA => 'gray',
+        self::ACCION_CERRO_DIA => 'warning',
     ];
 
     /** Se escribe una vez y queda; por eso no hay `updated_at`. */
@@ -102,6 +118,11 @@ class Auditoria extends Model
      * Nunca interrumpe lo que el usuario estaba haciendo: si el registro
      * falla, la operación de negocio sigue su curso.
      *
+     * `$sedeId` es la sede del hecho. Casi siempre es la del usuario y se
+     * deduce sola; se pasa a mano cuando lo que se registra no pasa en la sede
+     * de quien lo ejecuta —el cierre del día, por ejemplo, que lo corre una
+     * tarea programada sin usuario y cierra sede por sede.
+     *
      * @param  array<string, array{0: mixed, 1: mixed}>|null  $cambios
      */
     public static function registrar(
@@ -111,6 +132,7 @@ class Auditoria extends Model
         ?int $entidadId = null,
         ?array $cambios = null,
         ?User $usuario = null,
+        ?int $sedeId = null,
     ): ?self {
         try {
             $usuario ??= auth()->user();
@@ -119,7 +141,7 @@ class Auditoria extends Model
                 'usuario_id' => $usuario?->getKey(),
                 'usuario_nombre' => $usuario?->nombre_completo ?? 'Sistema',
                 'usuario_documento' => $usuario?->documento,
-                'sede_id' => $usuario?->sede_id,
+                'sede_id' => $sedeId ?? $usuario?->sede_id,
                 'accion' => $accion,
                 'entidad_tipo' => $entidadTipo,
                 'entidad_id' => $entidadId,

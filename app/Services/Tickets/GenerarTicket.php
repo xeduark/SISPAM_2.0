@@ -24,17 +24,18 @@ class GenerarTicket
     ) {}
 
     /**
-     * @param  array{alto_costo?: bool, prioridad?: string, motivo_prioridad?: ?string, observaciones?: ?string}  $datos
+     * @param  array{prioridad?: string, motivo_prioridad?: ?string, observaciones?: ?string}  $datos
      */
     public function handle(Paciente $paciente, Sede $sede, User $usuario, array $datos = [], ?CarbonInterface $fecha = null): Ticket
     {
-        $altoCosto = (bool) ($datos['alto_costo'] ?? false);
         $dia = $fecha ?? now();
 
-        $cola = $this->colaPara($sede, $altoCosto);
+        $cola = $this->colaPara($sede);
 
-        return DB::transaction(function () use ($paciente, $sede, $cola, $usuario, $datos, $altoCosto, $dia): Ticket {
-            $turno = $this->turnos->siguiente($cola, $dia);
+        return DB::transaction(function () use ($paciente, $sede, $cola, $usuario, $datos, $dia): Ticket {
+            // Numera la sede, no la cola: el turno ya no lleva prefijo, así que
+            // dos colas contando aparte sacarían el mismo «0060».
+            $turno = $this->turnos->siguiente($sede, $dia);
 
             return Ticket::create([
                 'numero' => $this->numero($sede, $turno, $dia),
@@ -46,7 +47,9 @@ class GenerarTicket
                 'estado' => Ticket::ESTADO_GENERADO,
                 'prioridad' => $datos['prioridad'] ?? Ticket::PRIORIDAD_NORMAL,
                 'motivo_prioridad' => $datos['motivo_prioridad'] ?? null,
-                'alto_costo' => $altoCosto,
+                // Nace en falso: lo marca farmacia al alistar, que es quien ve
+                // los medicamentos.
+                'alto_costo' => false,
                 'creado_por' => $usuario->getKey(),
                 'observaciones' => $datos['observaciones'] ?? null,
             ]);
@@ -54,17 +57,20 @@ class GenerarTicket
     }
 
     /**
-     * La cola que le toca: la de alto costo si está marcado, si no la general.
+     * La cola que le toca.
      *
-     * Cuál es cuál lo dice `colas.atiende_alto_costo`, no el prefijo: así se
-     * puede reconfigurar por sede sin tocar código.
+     * **El alto costo ya no decide fila.** Esa marca la pone farmacia al
+     * alistar, cuando ve los medicamentos; aquí todavía no se sabe. Así que
+     * todos los tickets nacen en la cola general de la sede.
+     *
+     * Si una sede solo dejó activa la de alto costo, se usa esa: el paciente
+     * se atiende igual, que es lo que importa.
      */
-    public function colaPara(Sede $sede, bool $altoCosto): Cola
+    public function colaPara(Sede $sede): Cola
     {
         $activas = $sede->colas()->where('activa', true)->orderBy('orden');
 
-        $cola = (clone $activas)->where('atiende_alto_costo', $altoCosto)->first()
-            // Si la sede no tiene cola de alto costo, el paciente igual se atiende.
+        $cola = (clone $activas)->where('atiende_alto_costo', false)->first()
             ?? (clone $activas)->first();
 
         if ($cola === null) {
@@ -75,16 +81,20 @@ class GenerarTicket
     }
 
     /**
-     * Número único en todo el sistema: SP-LA30-20261003-A023.
+     * Número único en todo el sistema: TK-PRP-261005-0060.
      *
      * Lleva la sede y la fecha, así que no se repite entre sedes ni entre
      * días, y el turno dentro ya es único en su cola. Por eso el módulo de
      * entrega puede seguir buscando solo por número.
+     *
+     * Los tickets emitidos antes conservan el formato viejo
+     * (`SP-LA30-20261003-A023`): entrega los busca por número exacto, así que
+     * reescribirlos sería dejarlos sin encontrar. Conviven sin problema.
      */
     private function numero(Sede $sede, string $turno, CarbonInterface $fecha): string
     {
         $codigo = $sede->codigo ?: 'S'.$sede->getKey();
 
-        return 'SP-'.strtoupper($codigo).'-'.$fecha->format('Ymd').'-'.str_replace('-', '', $turno);
+        return 'TK-'.strtoupper($codigo).'-'.$fecha->format('ymd').'-'.str_replace('-', '', $turno);
     }
 }

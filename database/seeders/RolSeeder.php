@@ -13,11 +13,15 @@ class RolSeeder extends Seeder
      */
     public function run(): void
     {
+        // Genera el ticket al registrar la visita, así que tiene que poder
+        // imprimírselo al paciente. No lleva `tickets.ver`: no entra al
+        // listado de Tickets ni ve los medicamentos de nadie.
         Rol::firstOrCreate(['nombre' => 'ORIENTADOR'], [
             'permisos' => [
                 'pacientes' => ['ver', 'crear', 'editar'],
                 'consultar_paciente' => ['ver'],
                 'orientacion' => ['usar', 'ver_orden'],
+                'tickets' => ['imprimir'],
             ],
         ]);
 

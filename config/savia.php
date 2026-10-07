@@ -106,7 +106,20 @@ return [
     ],
 
     'codigos_http' => [
-        401 => 'No autorizado: el token no fue aceptado. La app lo renueva y reintenta una vez; si persiste, revisa SAVIA_USERNAME y SAVIA_PASSWORD, o si el servicio espera otro grant_type.',
+        /*
+         * El 401 tiene dos causas muy distintas, y el cuerpo las separa:
+         *
+         * - «Token inválido» → el token de verdad no sirve: revisa
+         *   SAVIA_USERNAME y SAVIA_PASSWORD, o si el servicio espera otro
+         *   grant_type. La app ya renovó y reintentó una vez por su cuenta.
+         * - Cualquier otra cosa (o «MENSAJE: null») → el token **sí** se
+         *   aceptó y la consulta falló después. Casi siempre es que la IP
+         *   desde la que consultas no está autorizada por Savia.
+         *
+         * Por eso el detalle muestra lo que respondió el servicio: es lo que
+         * de verdad distingue un caso del otro.
+         */
+        401 => 'No autorizado. Si el servicio dice «Token inválido», revisa SAVIA_USERNAME y SAVIA_PASSWORD o el grant_type (la app ya renovó el token y reintentó una vez). Si dice otra cosa, el token sí se aceptó y lo más probable es que la IP desde la que consultas no esté autorizada por Savia.',
         404 => 'Recurso no encontrado: revisa que la URL del endpoint esté completa y bien escrita.',
         405 => 'Método no permitido: el servicio solo acepta POST.',
         415 => 'Unsupported Media Type: revisa la cabecera Content-Type.',

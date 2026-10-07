@@ -15,7 +15,7 @@ Binding actual en `AppServiceProvider`: **`TicketConsultaDb`** — los tickets r
 
 ### Buscar por turno
 
-Además del `numero`, `buscarPorNumero()` acepta el **turno corto** (`A-023`):
+Además del `numero`, `buscarPorNumero()` acepta el **turno corto** (`0060`):
 en el mostrador el paciente muestra eso, no el número largo. El turno se
 busca solo **del día de hoy y en la sede de quien atiende**, porque fuera de
 ahí se repite.

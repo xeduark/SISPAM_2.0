@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use Carbon\Carbon;
 use Database\Factories\TicketFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -122,6 +123,37 @@ class Ticket extends Model
 
     /** Desde esta edad se sugiere prioridad preferencial. */
     public const EDAD_ADULTO_MAYOR = 60;
+
+    /**
+     * Qué motivo de prioridad sugieren los datos que reporta Savia.
+     *
+     * Vive aquí, y no en el formulario, porque hay dos pantallas que abren
+     * visitas —el asistente de Pacientes y Orientación— y las dos tienen que
+     * sugerir lo mismo. Es solo una sugerencia: quien atiende decide.
+     */
+    public static function motivoPrioridadSugerido(?string $fechaNacimiento, ?string $discapacidad): ?string
+    {
+        if (filled($fechaNacimiento)) {
+            try {
+                if (Carbon::parse($fechaNacimiento)->age >= self::EDAD_ADULTO_MAYOR) {
+                    return 'adulto_mayor';
+                }
+            } catch (\Throwable) {
+                // Una fecha ilegible no debe romper el formulario.
+            }
+        }
+
+        $discapacidad = Paciente::normalizarTexto((string) $discapacidad);
+
+        return ($discapacidad !== '' && $discapacidad !== 'no') ? 'discapacidad' : null;
+    }
+
+    public static function prioridadSugeridaPara(?string $fechaNacimiento, ?string $discapacidad): string
+    {
+        return self::motivoPrioridadSugerido($fechaNacimiento, $discapacidad) !== null
+            ? self::PRIORIDAD_PREFERENCIAL
+            : self::PRIORIDAD_NORMAL;
+    }
 
     public const CAMPOS_AUDITADOS = ['estado', 'cola_id', 'prioridad', 'alto_costo'];
 
@@ -303,12 +335,18 @@ class Ticket extends Model
     }
 
     /**
-     * Las órdenes médicas de esta visita.
+     * Las fórmulas de esta visita, en el orden en que las dejó el orientador.
+     *
+     * Van ordenadas desde la relación y no desde cada pantalla: la galería, el
+     * modal de Alistar y la ficha del paciente tienen que mostrar las hojas en
+     * el mismo orden, y ese orden es parte de leer la fórmula.
      *
      * @return HasMany<Soporte, $this>
      */
     public function soportes(): HasMany
     {
-        return $this->hasMany(Soporte::class);
+        return $this->hasMany(Soporte::class)
+            ->orderBy('pagina')
+            ->orderBy('id');
     }
 }

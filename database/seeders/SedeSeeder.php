@@ -14,17 +14,26 @@ class SedeSeeder extends Seeder
     {
         // «Sede Principal» queda como sede administrativa; las demás son las reales.
         // La 7 entra más adelante.
-        // El código va dentro del número del ticket: SP-LA30-20261003-A023.
+        // El código va dentro del número del ticket: SP-PRP-20261005-A023.
         $sedes = [
-            'Sede Principal' => 'PRIN',
-            'La 30' => 'LA30',
-            'Premium Plaza' => 'PPLZ',
-            'BIC' => 'BIC',
-            'Centro Comercial Aventura' => 'AVEN',
+            'SPR' => 'Sede Principal',
+            'L30' => 'LA 30',
+            'PRP' => 'PREMIUM PLAZA',
+            'BIC' => 'EDIFICIO BIC',
+            'AVT' => 'AVENTURA',
         ];
 
-        foreach ($sedes as $nombre => $codigo) {
-            Sede::updateOrCreate(['nombre' => $nombre], ['codigo' => $codigo, 'activa' => true]);
+        /*
+         * Se busca por **código**, no por nombre.
+         *
+         * Los nombres cambiaron (`Premium Plaza` → `PREMIUM PLAZA`), así que
+         * buscar por nombre no encontraría la sede que ya existe: crearía una
+         * nueva y chocaría contra el índice único del código. El código, en
+         * cambio, es estable y único: es la llave que de verdad identifica la
+         * sede.
+         */
+        foreach ($sedes as $codigo => $nombre) {
+            Sede::updateOrCreate(['codigo' => $codigo], ['nombre' => $nombre, 'activa' => true]);
         }
     }
 }

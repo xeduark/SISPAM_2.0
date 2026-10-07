@@ -7,6 +7,7 @@ use App\Contracts\Ticket\Dto\TicketDto;
 use App\Contracts\Ticket\Dto\TicketItemDto;
 use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Models\Paciente;
+use App\Models\Sede;
 
 /**
  * Datos de prueba mientras el módulo de ticket no esté listo.
@@ -52,7 +53,7 @@ class TicketConsultaMock implements TicketConsultaInterface
             );
 
         $sedeId = (int) (auth()->user()?->sede_id
-            ?? \App\Models\Sede::query()->orderBy('id')->value('id')
+            ?? Sede::query()->orderBy('id')->value('id')
             ?? 1);
         $altoCosto = str_ends_with(strtoupper($numero), 'AC');
 

@@ -55,6 +55,10 @@ class Rol extends Model
                 'ver' => 'Ver',
                 'alistar' => 'Alistar (capturar medicamentos)',
                 'anular' => 'Anular',
+                // Aparte de `ver` a propósito: el ORIENTADOR genera el ticket
+                // y tiene que poder imprimírselo al paciente, pero no entra al
+                // listado de Tickets ni ve los medicamentos de nadie.
+                'imprimir' => 'Imprimir el ticket',
             ],
         ],
         'turnos' => [
