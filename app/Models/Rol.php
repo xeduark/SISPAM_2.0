@@ -76,6 +76,20 @@ class Rol extends Model
             // Solo se consulta: una auditoría no se crea, ni se edita, ni se borra.
             'acciones' => ['ver' => 'Ver'],
         ],
+        'inventario' => [
+            'nombre' => 'Inventario',
+            // Solo consulta por SKU: el inventario se administra en su propio sistema.
+            'acciones' => ['ver' => 'Consultar existencias y kardex por SKU'],
+        ],
+        'transcripcion' => [
+            'nombre' => 'Transcripción de fórmulas',
+            'acciones' => [
+                'ver' => 'Ver',
+                'transcribir' => 'Revisar y confirmar',
+                // Corregir una transcripción ya confirmada regenera la orden de entrega.
+                'rectificar' => 'Rectificar una confirmada',
+            ],
+        ],
         'entrega' => [
             'nombre' => 'Entrega',
             'acciones' => [

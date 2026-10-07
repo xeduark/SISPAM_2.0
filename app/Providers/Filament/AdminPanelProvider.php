@@ -9,6 +9,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationItem;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -85,6 +86,16 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
                 Pages\Dashboard::class,
+            ])
+            // La pantalla pública de la sala de la sede de quien entra (ej. /sala/PRIN).
+            ->navigationItems([
+                NavigationItem::make('Pantalla de sala')
+                    ->group('Turnero')
+                    ->icon('heroicon-o-tv')
+                    ->sort(9)
+                    ->url(fn (): string => route('sala', ['sede' => auth()->user()?->sede?->codigo ?? 'PRIN']))
+                    ->openUrlInNewTab()
+                    ->visible(fn (): bool => (bool) auth()->user()?->puede('turnos.ver')),
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([

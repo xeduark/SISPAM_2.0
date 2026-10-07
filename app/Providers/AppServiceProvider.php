@@ -3,13 +3,20 @@
 namespace App\Providers;
 
 use App\Contracts\Domina\DominaClientInterface;
+use App\Contracts\Inventario\CatalogoInventarioInterface;
 use App\Contracts\Ticket\TicketCierreInterface;
 use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Http\Responses\LogoutResponse;
+use App\Jobs\DescontarInventarioDeEntrega;
+use App\Jobs\LeerFormula;
 use App\Listeners\SincronizarEstadoDelTicket;
 use App\Models\Auditoria;
 use App\Models\Entrega;
+use App\Models\Soporte;
+use App\Models\Transcripcion;
 use App\Services\Domina\DominaClientMock;
+use App\Services\Inventario\CatalogoInventarioMock;
+use App\Services\Inventario\InventarioApi;
 use App\Services\Savia\SaviaClient;
 use App\Services\Ticket\TicketCierreDb;
 use App\Services\Ticket\TicketConsultaDb;
@@ -40,6 +47,11 @@ class AppServiceProvider extends ServiceProvider
 
         // Dómina sigue en mock hasta que exista la integración real.
         $this->app->bind(DominaClientInterface::class, DominaClientMock::class);
+
+        // Inventario: la API (proyecto inventario-api) si está en el .env; si no, el catálogo de prueba.
+        $this->app->bind(CatalogoInventarioInterface::class, fn () => InventarioApi::configurada()
+            ? new InventarioApi
+            : new CatalogoInventarioMock);
     }
 
     /**
@@ -67,6 +79,29 @@ class AppServiceProvider extends ServiceProvider
         // escucha el modelo para no tocar el código del módulo de entrega:
         // los dos se hablan solo por el puerto `TicketCierreInterface`.
         Entrega::saved(fn (Entrega $entrega) => app(SincronizarEstadoDelTicket::class)->handle($entrega));
+
+        // Lo entregado sale del inventario, escuchando el modelo para no tocar el módulo de entrega.
+        // `updated` y no `saved`: un save sin cambios repite `saved` con el wasChanged viejo.
+        Entrega::updated(function (Entrega $entrega): void {
+            if (InventarioApi::configurada()
+                && in_array($entrega->estado, [Entrega::ESTADO_COMPLETADA, Entrega::ESTADO_PARCIAL], true)
+                && $entrega->wasChanged('estado')) {
+                DescontarInventarioDeEntrega::dispatch($entrega)->afterCommit();
+            }
+        });
+
+        // Cada orden médica cargada entra a la cola de transcripción. Se escucha
+        // el modelo para no tocar el código de pacientes ni de tickets.
+        Soporte::created(function (Soporte $soporte): void {
+            $transcripcion = Transcripcion::create([
+                'soporte_id' => $soporte->getKey(),
+                'paciente_id' => $soporte->paciente_id,
+                'ticket_id' => $soporte->ticket_id,
+                'sede_id' => $soporte->ticket?->sede_id ?? $soporte->cargadoPor?->sede_id,
+            ]);
+
+            LeerFormula::dispatch($transcripcion)->afterCommit();
+        });
 
         Event::listen(Logout::class, function (Logout $evento): void {
             if ($evento->user === null) {

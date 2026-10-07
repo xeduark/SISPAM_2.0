@@ -200,3 +200,178 @@
         white-space: normal;
     }
 }
+
+
+/*
+ * Transcribir una fórmula: arriba la fórmula original y la previsualización del
+ * acta lado a lado; abajo, a todo lo ancho, el formulario. En pantallas angostas
+ * se apilan.
+ */
+.sispam-transcribir {
+    display: grid;
+    gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+    .sispam-transcribir {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.sispam-transcribir__panel {
+    width: 100%;
+    height: 60vh;
+    border: 0;
+    border-radius: 8px;
+    overflow: auto;
+}
+
+.sispam-transcribir__imagen {
+    background: var(--sispam-card-soft);
+}
+
+.sispam-transcribir__imagen img {
+    max-width: none;
+    transition: transform 0.2s ease;
+}
+
+.sispam-transcribir__herramientas {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.sispam-acta {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-inline-end: 4px;
+    font-size: 14px;
+}
+
+.sispam-acta__formula {
+    border: 1px solid var(--sispam-border);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.sispam-acta__formula--rechazada {
+    border-color: rgb(var(--danger-500));
+    background: rgba(var(--danger-500), 0.06);
+}
+
+.sispam-acta__formula--aviso {
+    border-color: rgb(var(--warning-500));
+    color: rgb(var(--warning-600));
+}
+
+.sispam-acta__titulo {
+    font-weight: 700;
+}
+
+.sispam-acta__sub {
+    color: var(--sispam-muted);
+    font-size: 12px;
+}
+
+.sispam-acta__rechazo {
+    margin-top: 4px;
+    font-weight: 700;
+    color: rgb(var(--danger-600));
+}
+
+.sispam-acta__lineas {
+    margin-top: 6px;
+}
+
+.sispam-acta__linea {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid var(--sispam-border);
+}
+
+.sispam-acta__linea:first-child {
+    border-top: 0;
+}
+
+.sispam-acta__check {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border: 1.5px solid var(--sispam-border);
+    border-radius: 999px;
+    color: var(--sispam-muted);
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--sispam-transition);
+}
+
+button.sispam-acta__check:not([disabled]):hover {
+    border-color: rgb(var(--success-600));
+}
+
+button.sispam-acta__check[disabled] {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.sispam-acta__check--ok {
+    border-color: rgb(var(--success-600));
+    background: rgb(var(--success-600));
+    color: #fff;
+}
+
+.sispam-acta__check--nada {
+    border-color: transparent;
+}
+
+.sispam-acta__producto {
+    flex: 1;
+    min-width: 0;
+}
+
+.sispam-acta__producto--tachado {
+    text-decoration: line-through;
+    color: var(--sispam-muted);
+}
+
+.sispam-acta__nombre {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sispam-acta__cantidad {
+    width: 40px;
+    text-align: right;
+    font-family: Consolas, "Courier New", monospace;
+}
+
+.sispam-acta__resumen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--sispam-border);
+}
+
+.sispam-acta__vacio {
+    padding: 2.5rem 0;
+    text-align: center;
+    color: var(--sispam-muted);
+    font-size: 14px;
+}
+
+.sispam-acta__vacio--error {
+    color: rgb(var(--danger-600));
+}

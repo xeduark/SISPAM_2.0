@@ -13,6 +13,7 @@ use App\Services\Entrega\RegistrarEntrega;
 use App\Services\Entrega\SaldoTicket;
 use App\Services\Ticket\TicketConsultaMock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -21,6 +22,13 @@ use Tests\TestCase;
 class DispensadorAccesoTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Las firmas de prueba no deben caer en storage/app/private real (pisaban las de las entregas locales).
+        Storage::fake('local');
+    }
 
     private function dispensador(array $accionesEntrega = ['ver', 'atender', 'domicilio', 'reportes']): User
     {

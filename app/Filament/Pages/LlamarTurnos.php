@@ -31,6 +31,8 @@ class LlamarTurnos extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-megaphone';
 
+    protected static ?string $navigationGroup = 'Turnero';
+
     protected static ?string $navigationLabel = 'Llamar turnos';
 
     protected static ?string $title = 'Llamar turnos';

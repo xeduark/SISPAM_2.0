@@ -209,6 +209,21 @@ hace falta que la IP del equipo esté autorizada por Savia.
   No se duplica en `auditorias`: esa tabla ya es el registro.
 - Módulo `turnos` de la matriz: ver, llamar, ausente.
 - Detalle: `docs/llamado-de-turnos.md`.
+## Módulos en construcción: Turnero y Transcripción
+- **Turnero** (`docs/turnero.md`): vista de sala `/sala/{codigo}` (ej. `/sala/PRIN`).
+  **El módulo de tickets no se toca.** Llamar/cerrar = farmacia, por la matriz de permisos.
+- **Transcripción** (`docs/transcripcion.md`): OCR de cada fórmula con Google Vision
+  (`DOCUMENT_TEXT_DETECTION`, vía `Http::`, sin SDK), verificación de cédula, comparación
+  original ↔ generada; al confirmar genera la orden de entrega separando
+  ventanilla y domicilio. Cola = `database` + `queue:work`.
+  Modelo de salida: `public/img/Orden de Dispensación & Alistamiento - TK-PRD-261005-0333.pdf`.
+- **Regla dura:** cada medicamento pertenece a UNA fórmula (`soporte_id`). Nunca mezclar
+  medicamentos de fórmulas distintas del mismo paciente.
+- `texto_ocr` es dato de salud: cast `encrypted`, nunca en logs ni `auditorias`.
+- Fase 1 de transcripción hecha: cada `Soporte` creado genera una `Transcripcion` y despacha
+  `LeerFormula` (motor `TRANSCRIPCION_MOTOR`: gemini como el nativo, o vision). Inventario = `CatalogoInventarioInterface` con mock hasta tener el real.
+- Menú: grupos **Turnero** (Llamar turnos, Pantalla de sala) y **Transcripción**.
+- Decisiones pendientes marcadas con «Decisión pendiente» en cada doc: resolverlas antes de codificar esa parte.
 ## Acceso local
 - URL: http://localhost:8000/admin
 - Usuario administrador sembrado: documento `AdminSispam` (debe existir con ese username en Authentik; la contraseña se gestiona allá)
