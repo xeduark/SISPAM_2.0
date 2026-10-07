@@ -1,0 +1,377 @@
+/*
+ * SISPAM 2 — Tema institucional del panel Filament.
+ * Fuente de verdad: estilos_generador_consolidado.md (raíz del proyecto).
+ * La paleta (primary / gray) se registra en AdminPanelProvider; aquí van
+ * sombras, radios, tipografía, encabezados de tabla y la marca.
+ */
+
+:root {
+    --sispam-card-soft: #f8fafb;
+    --sispam-border: #dfe4e8;
+    --sispam-text: #1f2933;
+    --sispam-muted: #66727d;
+    --sispam-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+    --sispam-transition:
+        background-color 0.25s ease,
+        border-color 0.25s ease,
+        transform 0.2s ease;
+}
+
+.dark {
+    --sispam-card-soft: #1d252a;
+    --sispam-border: #303a40;
+    --sispam-text: #edf2f4;
+    --sispam-muted: #aab5bc;
+    --sispam-shadow: 0 8px 25px rgba(0, 0, 0, 0.28);
+}
+
+/* Tipografía (§2) */
+.fi-body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: var(--sispam-text);
+}
+
+.fi-header-heading {
+    font-size: 25px;
+    font-weight: 700;
+}
+
+.fi-section-header-heading {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+/* Tarjetas: bordes suaves, radios y sombras discretas (§9, §13, §17, §18) */
+.fi-section,
+.fi-ta-ctn,
+.fi-wi-stats-overview-stat,
+.fi-fo-tabs {
+    border-radius: 12px;
+    box-shadow: var(--sispam-shadow);
+    transition: var(--sispam-transition);
+}
+
+.fi-simple-main {
+    border-radius: 16px;
+    box-shadow: var(--sispam-shadow);
+}
+
+.fi-wi-stats-overview-stat:hover {
+    transform: translateY(-2px);
+}
+
+/* Encabezados de tabla (§14) */
+.fi-ta-header-cell {
+    background-color: var(--sispam-card-soft);
+}
+
+.fi-ta-header-cell-label {
+    color: var(--sispam-muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+/* Botones (§8): en tema claro el hover oscurece el azul institucional */
+.fi-btn {
+    font-weight: 700;
+    border-radius: 8px;
+    transition: var(--sispam-transition);
+}
+
+:root:not(.dark) .fi-btn.fi-btn-color-primary:not([disabled]):hover {
+    background-color: rgb(var(--primary-700));
+}
+
+/*
+ * «Consultar en Savia»: el botón va en su propia fila, separado de los campos
+ * de búsqueda por una línea fina, para que se lea como una acción y no como
+ * un campo más del formulario (§8, §17).
+ */
+.sispam-consulta-savia {
+    margin-top: 4px;
+    padding-top: 18px;
+    border-top: 1px solid var(--sispam-border);
+}
+
+/* Es la acción principal de la sección, así que ocupa un ancho generoso.
+   En pantallas angostas se queda en el 100% sin desbordar. Va en su propia
+   clase para que los botones secundarios de la fila conserven su tamaño. */
+.sispam-boton-consulta {
+    min-width: min(360px, 100%);
+    padding-inline: 2rem;
+}
+
+/* Insignias (§15) */
+.fi-badge {
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+/* Campos */
+.fi-input-wrp {
+    border-radius: 8px;
+    transition: var(--sispam-transition);
+}
+
+/* Encabezado institucional (§1, §6) */
+.fi-sidebar-header,
+.fi-topbar > nav {
+    min-height: 4.5rem;
+}
+
+.fi-logo {
+    height: auto !important;
+}
+
+.sispam-marca {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--sispam-text);
+}
+
+.sispam-marca__institucion {
+    font-size: 10px;
+    line-height: 1.15;
+    letter-spacing: 3px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.sispam-marca__divisor {
+    width: 1px;
+    height: 38px;
+    background: var(--sispam-border);
+}
+
+.sispam-marca__texto {
+    display: flex;
+    flex-direction: column;
+}
+
+.sispam-marca__titulo {
+    font-size: 20px;
+    line-height: 1.1;
+    font-weight: 700;
+}
+
+.sispam-marca__subtitulo {
+    color: var(--sispam-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* En el login la marca se muestra a tamaño completo */
+.fi-simple-layout .sispam-marca {
+    gap: 20px;
+}
+
+.fi-simple-layout .sispam-marca__institucion {
+    font-size: 16px;
+    letter-spacing: 5px;
+}
+
+.fi-simple-layout .sispam-marca__divisor {
+    height: 58px;
+}
+
+.fi-simple-layout .sispam-marca__titulo {
+    font-size: 28px;
+}
+
+.fi-simple-layout .sispam-marca__subtitulo {
+    font-size: 14px;
+}
+
+/* Teléfonos (§20) */
+@media (max-width: 600px) {
+    .fi-simple-layout .sispam-marca__institucion {
+        font-size: 11px;
+        letter-spacing: 3px;
+    }
+
+    .fi-simple-layout .sispam-marca__titulo {
+        font-size: 22px;
+    }
+
+    .sispam-marca__subtitulo {
+        white-space: normal;
+    }
+}
+
+
+/*
+ * Transcribir una fórmula: arriba la fórmula original y la previsualización del
+ * acta lado a lado; abajo, a todo lo ancho, el formulario. En pantallas angostas
+ * se apilan.
+ */
+.sispam-transcribir {
+    display: grid;
+    gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+    .sispam-transcribir {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.sispam-transcribir__panel {
+    width: 100%;
+    height: 60vh;
+    border: 0;
+    border-radius: 8px;
+    overflow: auto;
+}
+
+.sispam-transcribir__imagen {
+    background: var(--sispam-card-soft);
+}
+
+.sispam-transcribir__imagen img {
+    max-width: none;
+    transition: transform 0.2s ease;
+}
+
+.sispam-transcribir__herramientas {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.sispam-acta {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-inline-end: 4px;
+    font-size: 14px;
+}
+
+.sispam-acta__formula {
+    border: 1px solid var(--sispam-border);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.sispam-acta__formula--rechazada {
+    border-color: rgb(var(--danger-500));
+    background: rgba(var(--danger-500), 0.06);
+}
+
+.sispam-acta__formula--aviso {
+    border-color: rgb(var(--warning-500));
+    color: rgb(var(--warning-600));
+}
+
+.sispam-acta__titulo {
+    font-weight: 700;
+}
+
+.sispam-acta__sub {
+    color: var(--sispam-muted);
+    font-size: 12px;
+}
+
+.sispam-acta__rechazo {
+    margin-top: 4px;
+    font-weight: 700;
+    color: rgb(var(--danger-600));
+}
+
+.sispam-acta__lineas {
+    margin-top: 6px;
+}
+
+.sispam-acta__linea {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid var(--sispam-border);
+}
+
+.sispam-acta__linea:first-child {
+    border-top: 0;
+}
+
+.sispam-acta__check {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border: 1.5px solid var(--sispam-border);
+    border-radius: 999px;
+    color: var(--sispam-muted);
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--sispam-transition);
+}
+
+button.sispam-acta__check:not([disabled]):hover {
+    border-color: rgb(var(--success-600));
+}
+
+button.sispam-acta__check[disabled] {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.sispam-acta__check--ok {
+    border-color: rgb(var(--success-600));
+    background: rgb(var(--success-600));
+    color: #fff;
+}
+
+.sispam-acta__check--nada {
+    border-color: transparent;
+}
+
+.sispam-acta__producto {
+    flex: 1;
+    min-width: 0;
+}
+
+.sispam-acta__producto--tachado {
+    text-decoration: line-through;
+    color: var(--sispam-muted);
+}
+
+.sispam-acta__nombre {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sispam-acta__cantidad {
+    width: 40px;
+    text-align: right;
+    font-family: Consolas, "Courier New", monospace;
+}
+
+.sispam-acta__resumen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--sispam-border);
+}
+
+.sispam-acta__vacio {
+    padding: 2.5rem 0;
+    text-align: center;
+    color: var(--sispam-muted);
+    font-size: 14px;
+}
+
+.sispam-acta__vacio--error {
+    color: rgb(var(--danger-600));
+}

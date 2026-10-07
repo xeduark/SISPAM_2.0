@@ -14,6 +14,15 @@ return [
     |
     */
 
+    'authentik' => [
+        'base_url' => env('AUTHENTIK_BASE_URL'),
+        'client_id' => env('AUTHENTIK_CLIENT_ID'),
+        'client_secret' => env('AUTHENTIK_CLIENT_SECRET'),
+        'redirect' => env('AUTHENTIK_REDIRECT_URI'),
+        // Slug de la aplicación en Authentik, usado para cerrar la sesión allá (end-session)
+        'app_slug' => env('AUTHENTIK_APP_SLUG'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
@@ -33,6 +42,26 @@ return [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
+    ],
+
+    'google_vision' => [
+        'key' => env('GOOGLE_VISION_API_KEY'),
+    ],
+
+    // Motor de lectura de fórmulas: gemini (el del sistema nativo) o vision.
+    'transcripcion' => [
+        'motor' => env('TRANSCRIPCION_MOTOR', 'vision'),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'modelo' => env('GEMINI_MODELO', 'gemini-2.5-flash'),
+    ],
+
+    // API de inventario (proyecto inventario-api). Sin URL se usa el catálogo mock.
+    'inventario' => [
+        'url' => env('INVENTARIO_API_URL'),
+        'token' => env('INVENTARIO_API_TOKEN'),
     ],
 
 ];
