@@ -59,12 +59,31 @@ class UserResource extends Resource
                     ->maxLength(255),
                 // Con su código: «PREMIUM PLAZA (PRP)». Buscar «PRP» la encuentra.
                 Forms\Components\Select::make('sede_id')
-                    ->label('Sede')
+                    ->label('Sede actual')
+                    ->helperText('Dónde está trabajando ahora. Si tiene varias asignadas, puede moverse desde la barra superior.')
                     ->options(fn (): array => Sede::opciones())
                     ->getOptionLabelUsing(fn ($value): ?string => Sede::find($value)?->etiqueta)
                     ->required()
                     ->searchable()
                     ->preload(),
+                /*
+                 * En cuáles puede trabajar. Con una sola, el selector de la
+                 * barra ni se muestra y la persona trabaja como siempre.
+                 *
+                 * Es lo que decide a qué datos de salud llega: cada sede ve
+                 * sus pacientes, sus tickets y sus fórmulas, así que agregar
+                 * una aquí es ampliar el acceso de alguien.
+                 */
+                Forms\Components\Select::make('sedes')
+                    ->label('Sedes donde puede trabajar')
+                    ->helperText('Agregar una amplía lo que esta persona puede ver y atender. Los administradores se mueven por todas sin necesidad de esto.')
+                    ->relationship('sedes', 'nombre')
+                    ->getOptionLabelFromRecordUsing(fn (Sede $record): string => $record->etiqueta)
+                    ->multiple()
+                    ->preload()
+                    ->searchable()
+                    ->hidden(fn (?User $record): bool => (bool) $record?->es_administrador)
+                    ->columnSpanFull(),
                 Forms\Components\Toggle::make('activo')
                     ->label('Usuario activo')
                     ->default(true),

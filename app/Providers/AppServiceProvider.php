@@ -103,6 +103,39 @@ class AppServiceProvider extends ServiceProvider
             LeerFormula::dispatch($transcripcion)->afterCommit();
         });
 
+        /*
+         * Un soporte que se cargó sin ticket y después adopta uno.
+         *
+         * Pasa cuando la sede no tenía colas activas: la fórmula se guarda
+         * igual y Orientación ofrece completarle el turno más tarde. Ese
+         * segundo paso es un `update`, no un `create`, así que no vuelve a
+         * pasar por el enganche de arriba y la transcripción se quedaría
+         * apuntando a ningún ticket.
+         *
+         * Transcripción ya es defensiva —la orden de entrega y la pantalla de
+         * revisión caen de vuelta al ticket del soporte—, pero su bandeja
+         * muestra la columna del turno vacía, y la transcriptora no sabría a
+         * qué paciente de la fila pertenece lo que está revisando.
+         *
+         * Se actualiza en masa a propósito: `ticket_id` no está en
+         * `Transcripcion::CAMPOS_AUDITADOS`, y esto es una corrección del
+         * enlace, no una decisión de nadie que haya que registrar.
+         */
+        Soporte::updated(function (Soporte $soporte): void {
+            if (! $soporte->wasChanged('ticket_id') || $soporte->ticket_id === null) {
+                return;
+            }
+
+            Transcripcion::query()
+                ->where('soporte_id', $soporte->getKey())
+                // Nunca se le quita el ticket a una que ya tenía otro.
+                ->whereNull('ticket_id')
+                ->update([
+                    'ticket_id' => $soporte->ticket_id,
+                    'sede_id' => $soporte->ticket?->sede_id,
+                ]);
+        });
+
         Event::listen(Logout::class, function (Logout $evento): void {
             if ($evento->user === null) {
                 return;

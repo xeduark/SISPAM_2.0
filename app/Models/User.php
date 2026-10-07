@@ -7,8 +7,10 @@ use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasName;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -99,6 +101,97 @@ class User extends Authenticatable implements FilamentUser, HasName
     public function sede(): BelongsTo
     {
         return $this->belongsTo(Sede::class);
+    }
+
+    /**
+     * Las sedes en las que esta persona tiene permiso de trabajar.
+     *
+     * Distinto de `sede()`, que es **dónde está ahora**. La mayoría tendrá una
+     * sola y no verá el selector de la barra.
+     *
+     * @return BelongsToMany<Sede, $this>
+     */
+    public function sedes(): BelongsToMany
+    {
+        return $this->belongsToMany(Sede::class)->withTimestamps();
+    }
+
+    /**
+     * Entre cuáles puede moverse, ya ordenadas.
+     *
+     * El administrador se mueve por todas sin que nadie se las asigne: ya ve
+     * todas las sedes en cada listado, así que limitarle el selector sería
+     * incoherente.
+     *
+     * Se incluye siempre la sede actual aunque nadie se la haya asignado: si
+     * un administrador se la quitó mientras la persona estaba trabajando, el
+     * selector tiene que seguir diciendo dónde está en vez de quedar en blanco.
+     *
+     * @return Collection<int, Sede>
+     */
+    public function sedesDondePuedeTrabajar(): Collection
+    {
+        if ($this->es_administrador) {
+            return Sede::query()->where('activa', true)->orderBy('nombre')->get();
+        }
+
+        return Sede::query()
+            ->where(fn ($consulta) => $consulta
+                // Las que le asignaron, mientras sigan abiertas.
+                ->whereIn('sedes.id', $this->sedes()->where('activa', true)->select('sedes.id'))
+                // Y donde está ahora, activa o no: si la cerraron mientras
+                // trabajaba, el selector tiene que seguir diciendo dónde está.
+                ->orWhere('sedes.id', $this->sede_id))
+            ->orderBy('nombre')
+            ->get();
+    }
+
+    /**
+     * Si tiene a dónde moverse. Con una sola sede el selector no se muestra.
+     */
+    public function puedeCambiarDeSede(): bool
+    {
+        return $this->sedesDondePuedeTrabajar()->count() > 1;
+    }
+
+    /**
+     * Se muda a otra sede.
+     *
+     * Escribe `sede_id`, que es lo que lee todo el sistema —tickets, turnos,
+     * entrega, transcripción e inventario—, así que el cambio vale para todo
+     * de inmediato y no hace falta una «sede activa» aparte.
+     *
+     * Devuelve false si la sede no está entre las suyas: el selector solo
+     * ofrece las permitidas, pero el id viaja por la petición.
+     */
+    public function cambiarDeSede(Sede $sede): bool
+    {
+        if (! $this->sedesDondePuedeTrabajar()->contains('id', $sede->getKey())) {
+            return false;
+        }
+
+        if ((int) $this->sede_id === (int) $sede->getKey()) {
+            return true;
+        }
+
+        $anterior = $this->sede;
+
+        $this->sede_id = $sede->getKey();
+        $this->save();
+        $this->setRelation('sede', $sede);
+
+        // Queda quién se movió y a dónde: desde ese momento ve y atiende lo de
+        // la sede nueva, y conviene poder reconstruirlo.
+        Auditoria::registrar(
+            accion: Auditoria::ACCION_CAMBIO_DE_SEDE,
+            descripcion: 'Cambió de sede: '.($anterior?->etiqueta ?? 'sin sede').' → '.$sede->etiqueta,
+            entidadTipo: 'usuario',
+            entidadId: $this->getKey(),
+            usuario: $this,
+            sedeId: $sede->getKey(),
+        );
+
+        return true;
     }
 
     public function getNombreCompletoAttribute(): string

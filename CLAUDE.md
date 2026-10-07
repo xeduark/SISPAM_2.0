@@ -157,7 +157,23 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - **La sede siempre se nombra con su código**: `Sede::etiqueta` → «PREMIUM PLAZA (PRP)»,
   y `Sede::opciones()` para selectores y filtros. Armarla en un solo sitio es lo que
   garantiza que todas las pantallas y el ticket impreso digan lo mismo.
-- Un usuario pertenece a **una sola** sede (`users.sede_id`).
+- `users.sede_id` es **dónde está trabajando ahora** una persona, y es lo que
+  lee todo el sistema: tickets, turnos, entrega, transcripción e inventario.
+- **Moverse de sede**: la tabla `sede_user` dice en cuáles tiene permiso de
+  trabajar cada quien (`2026_10_09_100000_sedes_donde_puede_trabajar_cada_usuario`,
+  que al migrar le asigna a cada usuario la sede en la que ya estaba — nadie
+  pierde acceso). Con más de una aparece el **selector de la barra superior**
+  (`App\Livewire\SelectorDeSede`, render hook `TOPBAR_END`); con una sola no se
+  muestra nada y todo sigue igual que antes.
+- **Cambiar de sede escribe `users.sede_id`**, así que vale de inmediato para
+  todos los módulos sin tocar los 16 sitios que la leen —incluidos los de
+  turnos y transcripción, que son de otra persona—. Se asignan en
+  Usuarios → «Sedes donde puede trabajar»; el administrador se mueve por todas
+  sin que nadie se las asigne, porque ya ve todas en cada listado.
+- La comprobación de verdad está en `User::cambiarDeSede()`, no en el selector:
+  el id de la sede viaja en la petición. Cada cambio queda en la auditoría
+  (`Auditoria::ACCION_CAMBIO_DE_SEDE`) y **suelta la ventanilla guardada en la
+  sesión**, que era de la sede anterior.
 ## Orientación (pantalla de ingreso rápido)
 - `/admin/orientacion` — donde el orientador recibe al paciente **en una sola
   pantalla**: documento → Enter → Savia llena los datos → confirma el contacto
@@ -227,6 +243,15 @@ hace falta que la IP del equipo esté autorizada por Savia.
   enterraría el rastro de quién sí leyó la fórmula. Queda **una línea por
   entrada a la galería** (`Auditoria::ACCION_VIO_GALERIA`, desde
   `ViewPaciente::mount()`); abrir una hoja concreta se sigue auditando una por una.
+- **Lo que sigue después del ticket es transcripción.** Cada hoja entra sola a
+  su cola: el puente es `Soporte::created` en `AppServiceProvider`, que crea la
+  fila en `transcripciones` y despacha `LeerFormula` con `afterCommit()`.
+  **Orientación no llama a transcripción ni al revés**: lo único que las une es
+  que una crea soportes y la otra los escucha. Ver `docs/transcripcion.md`.
+- Un soporte que **adopta un ticket después** (la fórmula que quedó sin turno)
+  cambia con `update`, no con `create`, así que no vuelve a pasar por ese
+  enganche: un segundo listener `Soporte::updated` le pasa el ticket a su
+  transcripción. Sin él, la bandeja de transcripción muestra el turno vacío.
 - Falta: **las fórmulas en el modal de Alistar** — fuera de alcance, ese módulo
   es de otra persona. Con ello queda pendiente el segundo camino de permiso en
   `OrdenMedicaController` (`tickets.alistar` + misma sede).
