@@ -36,6 +36,9 @@ class EntregaModuloTest extends TestCase
     {
         parent::setUp();
 
+        // Las firmas de prueba no deben caer en storage/app/private real (pisaban las de las entregas locales).
+        Storage::fake('local');
+
         $this->app->bind(TicketConsultaInterface::class, TicketConsultaMock::class);
     }
 

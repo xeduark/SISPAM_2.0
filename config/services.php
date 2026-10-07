@@ -44,4 +44,24 @@ return [
         ],
     ],
 
+    'google_vision' => [
+        'key' => env('GOOGLE_VISION_API_KEY'),
+    ],
+
+    // Motor de lectura de fórmulas: gemini (el del sistema nativo) o vision.
+    'transcripcion' => [
+        'motor' => env('TRANSCRIPCION_MOTOR', 'vision'),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'modelo' => env('GEMINI_MODELO', 'gemini-2.5-flash'),
+    ],
+
+    // API de inventario (proyecto inventario-api). Sin URL se usa el catálogo mock.
+    'inventario' => [
+        'url' => env('INVENTARIO_API_URL'),
+        'token' => env('INVENTARIO_API_TOKEN'),
+    ],
+
 ];

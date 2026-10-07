@@ -154,6 +154,11 @@ class EntregaResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()->label('Ver detalle'),
+                Tables\Actions\Action::make('acta')
+                    ->label('Acta')
+                    ->icon('heroicon-m-printer')
+                    ->color('gray')
+                    ->url(fn (Entrega $record): string => route('entregas.acta', $record), shouldOpenInNewTab: true),
                 Tables\Actions\EditAction::make()->label('Facturación'),
             ]);
     }

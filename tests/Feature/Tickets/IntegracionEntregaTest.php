@@ -20,6 +20,7 @@ use App\Services\Ticket\TicketConsultaDb;
 use App\Services\Tickets\AlistarTicket;
 use App\Services\Tickets\GenerarTicket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -37,6 +38,10 @@ class IntegracionEntregaTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Sin esto las firmas de prueba se escribían en storage/app/private real y pisaban
+        // las firmas de las entregas locales con el mismo id.
+        Storage::fake('local');
 
         $this->sede = Sede::factory()->create(['nombre' => 'La 30', 'codigo' => 'LA30']);
         Cola::factory()->create([

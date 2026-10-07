@@ -34,6 +34,12 @@ class Auditoria extends Model
 
     public const ACCION_DESCARGO_ORDEN = 'descargo_orden';
 
+    public const ACCION_IMPRIMIO_ORDEN_ENTREGA = 'imprimio_orden_entrega';
+
+    public const ACCION_ABRIO_ACTA_ENTREGA = 'abrio_acta_entrega';
+
+    public const ACCION_RECTIFICO_TRANSCRIPCION = 'rectifico_transcripcion';
+
     /** Etiquetas en español para mostrar la acción en pantalla. */
     public const ACCIONES = [
         self::ACCION_INGRESO => 'Ingresó',
@@ -43,6 +49,9 @@ class Auditoria extends Model
         self::ACCION_ELIMINO => 'Eliminó',
         self::ACCION_CONSULTO_SAVIA => 'Consultó en Savia',
         self::ACCION_DESCARGO_ORDEN => 'Abrió una orden médica',
+        self::ACCION_IMPRIMIO_ORDEN_ENTREGA => 'Abrió una orden de entrega',
+        self::ACCION_ABRIO_ACTA_ENTREGA => 'Abrió un acta de entrega',
+        self::ACCION_RECTIFICO_TRANSCRIPCION => 'Rectificó una transcripción',
     ];
 
     /** Color del badge por acción, dentro de la paleta institucional. */
@@ -54,6 +63,9 @@ class Auditoria extends Model
         self::ACCION_ELIMINO => 'danger',
         self::ACCION_CONSULTO_SAVIA => 'info',
         self::ACCION_DESCARGO_ORDEN => 'warning',
+        self::ACCION_IMPRIMIO_ORDEN_ENTREGA => 'warning',
+        self::ACCION_ABRIO_ACTA_ENTREGA => 'warning',
+        self::ACCION_RECTIFICO_TRANSCRIPCION => 'warning',
     ];
 
     /** Se escribe una vez y queda; por eso no hay `updated_at`. */
