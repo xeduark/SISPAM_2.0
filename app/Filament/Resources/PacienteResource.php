@@ -6,8 +6,12 @@ use App\Filament\Concerns\ControlaPermisos;
 use App\Filament\Resources\PacienteResource\Concerns\AvisaSobreSavia;
 use App\Filament\Resources\PacienteResource\Pages;
 use App\Filament\Resources\PacienteResource\ResultadoConsulta;
+use App\Models\Auditoria;
 use App\Models\Paciente;
+use App\Models\Soporte;
+use App\Models\Ticket;
 use App\Services\Savia\SaviaClient;
+use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists;
@@ -90,6 +94,7 @@ class PacienteResource extends Resource
                                 ->label('Consultar en Savia')
                                 ->icon('heroicon-m-magnifying-glass')
                                 ->size(ActionSize::Large)
+                                ->extraAttributes(['class' => 'sispam-boton-consulta'])
                                 ->action(function (Forms\Get $get, Forms\Set $set, Component $livewire): void {
                                     $tipo = (string) $get('tipo_documento');
                                     $numero = trim((string) $get('numero_documento'));
@@ -470,6 +475,29 @@ class PacienteResource extends Resource
                                     // carga si hay una orden nueva.
                                     ->required(fn (string $operation): bool => $operation === 'create')
                                     ->columnSpanFull(),
+
+                                // Los preferenciales se llaman de primeras en la sala.
+                                Forms\Components\Radio::make('prioridad')
+                                    ->label('Prioridad en la fila')
+                                    ->options(Ticket::PRIORIDADES)
+                                    ->inline()
+                                    ->default(Ticket::PRIORIDAD_NORMAL)
+                                    ->required()
+                                    ->live()
+                                    // Se sugiere según la edad y la discapacidad que reporta
+                                    // Savia; el orientador siempre puede cambiarlo.
+                                    ->afterStateHydrated(fn (Forms\Components\Radio $component, Forms\Get $get) => $component->state(
+                                        $component->getState() ?? static::prioridadSugerida($get),
+                                    ))
+                                    ->helperText(fn (Forms\Get $get): ?string => static::motivoSugerido($get) !== null
+                                        ? 'Según los datos de Savia, este paciente podría ser preferencial.'
+                                        : null),
+                                Forms\Components\Select::make('motivo_prioridad')
+                                    ->label('Motivo')
+                                    ->options(Ticket::MOTIVOS_PRIORIDAD)
+                                    ->default(fn (Forms\Get $get): ?string => static::motivoSugerido($get))
+                                    ->required(fn (Forms\Get $get): bool => $get('prioridad') === Ticket::PRIORIDAD_PREFERENCIAL)
+                                    ->visible(fn (Forms\Get $get): bool => $get('prioridad') === Ticket::PRIORIDAD_PREFERENCIAL),
                             ])
                             ->visible(fn (): bool => (bool) auth()->user()?->puede('orientacion.usar')),
                     ])
@@ -777,6 +805,39 @@ class PacienteResource extends Resource
                     ->collapsible()
                     ->collapsed(),
 
+                Infolists\Components\Section::make('Órdenes médicas')
+                    ->description('Archivos privados. Abrirlos queda registrado en la auditoría.')
+                    ->icon('heroicon-o-document-text')
+                    ->schema([
+                        Infolists\Components\RepeatableEntry::make('soportes')
+                            ->hiddenLabel()
+                            ->schema([
+                                Infolists\Components\TextEntry::make('created_at')
+                                    ->label('Cargada el')
+                                    ->dateTime('d/m/Y H:i'),
+                                Infolists\Components\TextEntry::make('cargadoPor.nombre_completo')
+                                    ->label('Cargada por')
+                                    ->placeholder('—'),
+                                Infolists\Components\TextEntry::make('alto_costo_oncologico')
+                                    ->label('Alto costo u oncológico')
+                                    ->badge()
+                                    ->formatStateUsing(fn (bool $state): string => $state ? 'Sí' : 'No')
+                                    ->color(fn (bool $state): string => $state ? 'warning' : 'gray'),
+                                Infolists\Components\TextEntry::make('orden_medica')
+                                    ->hiddenLabel()
+                                    ->formatStateUsing(fn (): string => 'Abrir la orden médica')
+                                    ->icon('heroicon-m-arrow-top-right-on-square')
+                                    ->color('primary')
+                                    ->url(fn (Soporte $record): string => route('soportes.orden-medica', $record))
+                                    ->openUrlInNewTab()
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(3),
+                    ])
+                    // Son datos de salud: solo quien tenga el permiso ve esta sección.
+                    ->visible(fn (Paciente $record): bool => (bool) auth()->user()?->puede('orientacion.ver_orden')
+                        && $record->soportes()->exists()),
+
                 Infolists\Components\Section::make('Última consulta a Savia')
                     ->schema([
                         Infolists\Components\TextEntry::make('consultado_en_savia_at')
@@ -832,6 +893,17 @@ class PacienteResource extends Resource
         ]);
 
         $afiliado = $respuesta->primerAfiliado();
+
+        // Queda el rastro de quién consultó qué documento. Del resultado solo
+        // se guarda si lo encontró: nunca los datos del afiliado.
+        Auditoria::registrar(
+            accion: Auditoria::ACCION_CONSULTO_SAVIA,
+            descripcion: 'Consultó en Savia el documento '
+                .strtoupper($tipoDocumento).' '.$numeroDocumento
+                .($afiliado === null ? ' (sin resultado)' : ''),
+            entidadTipo: 'paciente',
+            entidadId: $existente?->getKey(),
+        );
 
         if (! $respuesta->exitosa() || $afiliado === null) {
             $diagnostico = $respuesta->diagnostico();
@@ -935,10 +1007,73 @@ class PacienteResource extends Resource
         $altoCosto = (bool) ($data['alto_costo_oncologico'] ?? false);
         unset($data['orden_medica'], $data['alto_costo_oncologico']);
 
+        // FileUpload a veces deja [uuid => ruta] si aún no se deshidrató.
+        if (is_array($orden)) {
+            $orden = collect($orden)->filter(fn ($v) => filled($v))->first();
+        }
+
         return blank($orden) ? null : [
-            'orden_medica' => $orden,
+            'orden_medica' => (string) $orden,
             'alto_costo_oncologico' => $altoCosto,
             'cargado_por' => auth()->id(),
+        ];
+    }
+
+    /**
+     * Qué motivo de prioridad sugieren los datos que trajo Savia.
+     *
+     * Es solo una sugerencia: el orientador decide. La edad se toma de la
+     * fecha de nacimiento y la discapacidad del campo que reporta el servicio.
+     */
+    public static function motivoSugerido(Forms\Get $get): ?string
+    {
+        $nacimiento = $get('fecha_nacimiento');
+
+        if (filled($nacimiento)) {
+            try {
+                if (Carbon::parse($nacimiento)->age >= Ticket::EDAD_ADULTO_MAYOR) {
+                    return 'adulto_mayor';
+                }
+            } catch (\Throwable) {
+                // Una fecha ilegible no debe romper el formulario.
+            }
+        }
+
+        $discapacidad = Paciente::normalizarTexto((string) $get('discapacidad'));
+
+        return ($discapacidad !== '' && $discapacidad !== 'no') ? 'discapacidad' : null;
+    }
+
+    public static function prioridadSugerida(Forms\Get $get): string
+    {
+        return static::motivoSugerido($get) !== null
+            ? Ticket::PRIORIDAD_PREFERENCIAL
+            : Ticket::PRIORIDAD_NORMAL;
+    }
+
+    /**
+     * Saca del formulario los datos que son del ticket y no del paciente.
+     *
+     * El alto costo se lee del soporte y no de `$data` a propósito:
+     * `separarSoporte()` ya se lo llevó del formulario, así que pedirlo por
+     * parámetro deja la dependencia a la vista y no depende del orden en que
+     * se llamen los dos métodos.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>|null  $soporte  Lo que devolvió `separarSoporte()`
+     * @return array{alto_costo: bool, prioridad: string, motivo_prioridad: ?string}
+     */
+    public static function separarDatosDelTicket(array &$data, ?array $soporte = null): array
+    {
+        $prioridad = $data['prioridad'] ?? Ticket::PRIORIDAD_NORMAL;
+        $motivo = $data['motivo_prioridad'] ?? null;
+        unset($data['prioridad'], $data['motivo_prioridad']);
+
+        return [
+            'alto_costo' => (bool) ($soporte['alto_costo_oncologico'] ?? $data['alto_costo_oncologico'] ?? false),
+            'prioridad' => $prioridad,
+            // El motivo solo tiene sentido si es preferencial.
+            'motivo_prioridad' => $prioridad === Ticket::PRIORIDAD_PREFERENCIAL ? $motivo : null,
         ];
     }
 

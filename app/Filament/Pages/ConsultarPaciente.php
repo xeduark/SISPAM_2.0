@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Auditoria;
 use App\Models\Paciente;
 use App\Services\Savia\SaviaClient;
 use Filament\Forms;
@@ -81,7 +82,9 @@ class ConsultarPaciente extends Page implements HasForms
                     ])
                     ->autofocus(),
             ])
-            ->columns(['default' => 1, 'sm' => 3])
+            // Dos campos en dos columnas: con tres quedaba un tercio vacío
+            // y los campos apretados contra la izquierda.
+            ->columns(['default' => 1, 'sm' => 2])
             ->statePath('datos');
     }
 
@@ -116,6 +119,15 @@ class ConsultarPaciente extends Page implements HasForms
         $this->diagnostico = $respuesta->diagnostico();
 
         $afiliado = $respuesta->primerAfiliado();
+
+        // Queda el rastro de quién consultó qué documento, sin datos del afiliado.
+        Auditoria::registrar(
+            accion: Auditoria::ACCION_CONSULTO_SAVIA,
+            descripcion: 'Consultó en Savia el documento '
+                .strtoupper((string) $datos['tipo_documento']).' '.$datos['numero_documento']
+                .($afiliado === null ? ' (sin resultado)' : ''),
+            entidadTipo: 'paciente',
+        );
 
         if (! $respuesta->exitosa() || $afiliado === null) {
             // Cuando el servicio responde bien pero sin afiliados, el mensaje

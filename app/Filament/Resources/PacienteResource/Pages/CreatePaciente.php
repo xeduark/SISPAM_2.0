@@ -4,6 +4,7 @@ namespace App\Filament\Resources\PacienteResource\Pages;
 
 use App\Filament\Resources\PacienteResource;
 use App\Filament\Resources\PacienteResource\Concerns\AvisaSobreSavia;
+use App\Filament\Resources\PacienteResource\Concerns\GeneraTicketDeLaVisita;
 use App\Filament\Resources\PacienteResource\Concerns\MuestraAvisosDeSavia;
 use App\Models\Paciente;
 use Filament\Actions\Action;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class CreatePaciente extends CreateRecord implements AvisaSobreSavia
 {
-    use MuestraAvisosDeSavia;
+    use GeneraTicketDeLaVisita, MuestraAvisosDeSavia;
 
     protected static string $resource = PacienteResource::class;
 
@@ -49,7 +50,13 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
     {
         $sinConsulta = fn (): bool => ! $this->hayConsultaVigente();
 
-        return array_map(fn (Action $accion): Action => $accion->livewire($this), [
+        return array_map(fn (Action $accion): Action => $accion
+            ->livewire($this)
+            // Evita doble clic mientras Livewire procesa el create.
+            ->extraAttributes([
+                'wire:loading.attr' => 'disabled',
+                'wire:target' => 'create',
+            ]), [
             $this->getCreateFormAction()
                 // El mismo flujo sirve para registrar y para actualizar: el botón
                 // dice lo que de verdad va a pasar.
@@ -110,11 +117,13 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
         ]);
 
         $soporte = PacienteResource::separarSoporte($data);
+        $datosTicket = PacienteResource::separarDatosDelTicket($data, $soporte);
 
         $paciente->fill($data)->save();
 
+        // La orden médica abre una visita: eso es lo que genera el ticket.
         if ($soporte !== null) {
-            $paciente->soportes()->create($soporte);
+            $this->generarTicketDeLaVisita($paciente, $soporte, $datosTicket);
         }
 
         return $paciente;

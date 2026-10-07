@@ -10,8 +10,16 @@
 
             {{ $this->form }}
 
-            <div class="mt-4 flex flex-wrap items-center gap-3">
-                <x-filament::button type="submit" icon="heroicon-m-magnifying-glass" wire:loading.attr="disabled">
+            {{-- La acción va en su propia fila, separada de los campos y centrada,
+                 igual que en el formulario de registro. --}}
+            <div class="sispam-consulta-savia flex flex-wrap items-center justify-center gap-3">
+                <x-filament::button
+                    type="submit"
+                    size="lg"
+                    icon="heroicon-m-magnifying-glass"
+                    class="sispam-boton-consulta"
+                    wire:loading.attr="disabled"
+                >
                     <span wire:loading.remove wire:target="buscar">Consultar en Savia</span>
                     <span wire:loading wire:target="buscar">Consultando…</span>
                 </x-filament::button>
