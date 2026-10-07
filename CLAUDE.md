@@ -143,41 +143,176 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - Detalle: `docs/auditoria.md`.
 
 ## Sedes
-- Sedes reales: **La 30, Premium Plaza, BIC, Centro Comercial Aventura**. La 7 entra después.
-- «Sede Principal» se conserva como sede administrativa.
-- Se siembran con `php artisan db:seed --class=SedeSeeder` (usa `updateOrCreate`, se puede repetir).
+- Sedes reales y sus códigos: **LA 30 (L30), PREMIUM PLAZA (PRP), EDIFICIO BIC (BIC),
+  AVENTURA (AVT)**. La 7 entra después.
+- «Sede Principal» (SPR) se conserva como sede administrativa.
+- **El código es de 3 caracteres**, obligatorio y único: es lo que cabe en el ticket
+  impreso de 80 mm y va dentro del número (`TK-PRP-261005-0060`).
+- Se siembran con `php artisan db:seed --class=SedeSeeder`. **Busca por código, no por
+  nombre**: los nombres cambiaron, así que buscar por nombre duplicaría sedes y chocaría
+  con el índice único del código.
+- La migración `2026_10_06_100000_renombrar_sedes_y_codigos` renombró las que ya existían
+  con un `update` (no borra ni recrea: tienen usuarios, colas, ventanillas y tickets).
+  **Los tickets ya emitidos conservan su número viejo**, porque entrega los busca por él.
+- **La sede siempre se nombra con su código**: `Sede::etiqueta` → «PREMIUM PLAZA (PRP)»,
+  y `Sede::opciones()` para selectores y filtros. Armarla en un solo sitio es lo que
+  garantiza que todas las pantallas y el ticket impreso digan lo mismo.
 - Un usuario pertenece a **una sola** sede (`users.sede_id`).
+## Orientación (pantalla de ingreso rápido)
+- `/admin/orientacion` — donde el orientador recibe al paciente **en una sola
+  pantalla**: documento → Enter → Savia llena los datos → confirma el contacto
+  → foto de la fórmula → «Generar ticket». Permiso `orientacion.usar`.
+- **Está hecha para el celular**: una columna, campos grandes, teclado numérico
+  en el documento. En pantallas anchas se abre a dos columnas sola.
+- **El turno sale enorme en la pantalla**, no solo en el papel: la impresora
+  está en el mostrador y el orientador en el teléfono, así que generar el
+  ticket no puede depender de que el celular alcance la impresora. Imprimir es
+  un extra (`tickets.imprimir`), y el PC del mostrador siempre puede reimprimir.
+- **No duplica nada**: reusa `consultarEnSavia()`, `CAMPOS_SAVIA`/`CAMPOS_CONTACTO`,
+  `separarOrdenesMedicas()`, `separarDatosDelTicket()` y `GenerarTicket`. Lo propio es
+  `Services\Orientacion\RegistrarVisita`, que en **una transacción** crea o
+  actualiza al paciente, cuelga la fórmula y abre el ticket.
+- **La sugerencia de prioridad se mudó a `Ticket::prioridadSugeridaPara()`**
+  (antes vivía en `PacienteResource::motivoSugerido()`, atada a un `Forms\Get`):
+  hay dos pantallas que abren visitas y las dos tienen que sugerir lo mismo.
+- Si no se puede generar el ticket (sede sin colas), **el paciente y su fórmula
+  igual se guardan**. Misma regla que el asistente.
+- **Es la única pantalla que abre visitas.** El paso Orientación del asistente
+  de Pacientes **se retiró** (con él, el trait `GeneraTicketDeLaVisita` y
+  `separarSoporte()`): el argumento que lo sostenía —recuperar una fórmula sin
+  ticket «volviendo a editar el paciente»— **no funcionaba**, porque el campo
+  sale vacío al editar y el archivo nuevo recibe otra ruta, así que creaba un
+  soporte nuevo y dejaba el huérfano colgando. Un solo camino = una sola regla
+  para los duplicados. `/admin/pacientes` queda para registrar y corregir la
+  ficha, y **ya no exige fórmula al crear**.
+- **La fórmula que quedó sin turno** (sede sin colas) se completa desde
+  Orientación: al consultar a ese paciente se avisa y se ofrece «Generar el
+  turno de esa fórmula», **sin volver a tomar las fotos** ni reconfirmar el
+  contacto. Solo las hojas de la **carga más reciente**: dos días mal
+  configurados son dos fórmulas distintas. Se renumeran desde 1.
+- **Varias fotos por visita**: de 1 a 10 archivos (JPG, PNG, WEBP, PDF) de 10 MB.
+  **Un soporte por hoja**, todos del mismo ticket, con su `pagina`
+  (`2026_10_07_100000_varias_formulas_por_visita` agrega `pagina` y `mime`).
+  Un soporte por archivo deja intactas la ruta protegida y la auditoría, que
+  trabajan **por soporte**: así queda el rastro de quién abrió *cuál* hoja.
+  **El nombre original del archivo no se guarda**: llevaría el del paciente.
+- El campo es el `FileUpload` de Filament, no JS propio: cuadrícula
+  (`panelLayout('grid')`), agregar sin perder (`appendFiles`), reordenar
+  (`reorderable`), ver grande y rotar (`imageEditor`) y **reducir a 2000 px en
+  el navegador** (`imageResize*`), que de paso endereza por EXIF y borra los
+  metadatos. Arrastrar una hoja cambia su `pagina`.
+- **Sin `openable()` a propósito**: con archivos temporales no hay URL, y con
+  los guardados caería a `Storage::url()` — una URL pública a un dato de salud.
+- **HEIC no está en `acceptedFileTypes` a propósito**: pedir `image/jpeg` es lo
+  que hace que iOS convierta la foto al elegirla. El que llegue igual se
+  rechaza con un mensaje que dice cómo cambiar el formato en el iPhone.
+- **Si el paciente ya tiene una visita viva en esa sede**, se avisa antes de
+  generar otra (`Services\Orientacion\VisitaAbierta`): turno de hoy sin cerrar,
+  o parcial con pendientes de cualquier fecha (los parciales no vencen). Si hay
+  los dos manda el de hoy. Tres salidas: **reimprimir** el que tiene, **sumar
+  las fotos a esa visita** (sin consumir turno, siguiendo la numeración de
+  páginas) o **generar otro de todos modos**, que queda en la auditoría.
+  Solo mira la sede propia: las tres salidas exigen misma sede.
+  `RegistrarVisita` comprueba que la visita sea del paciente y de la sede — ese
+  id viaja por Livewire.
+- **Galería de fórmulas en la ficha del paciente** (sección «Fórmulas
+  médicas»): agrupadas por visita, miniaturas, y un visor con zoom y giro hecho
+  con el Alpine que ya trae Filament. Los PDF se abren en el visor del navegador.
+- **Miniaturas**: `soportes/{soporte}/miniatura`, 400 px, GD, mismo disco
+  privado y **mismo permiso** que el original
+  (`2026_10_07_110000_miniaturas_de_las_formulas`). Se generan **cuando alguien
+  las pide**, no al guardar: así no se alarga la transacción del mostrador y
+  los soportes viejos quedan cubiertos sin comando de relleno.
+- **Las miniaturas no auditan, y es a propósito**: una línea por imagen pintada
+  enterraría el rastro de quién sí leyó la fórmula. Queda **una línea por
+  entrada a la galería** (`Auditoria::ACCION_VIO_GALERIA`, desde
+  `ViewPaciente::mount()`); abrir una hoja concreta se sigue auditando una por una.
+- Falta: **las fórmulas en el modal de Alistar** — fuera de alcance, ese módulo
+  es de otra persona. Con ello queda pendiente el segundo camino de permiso en
+  `OrdenMedicaController` (`tickets.alistar` + misma sede).
+- Detalle: `docs/orientacion.md`.
 ## Tickets
-- El ticket **es la visita del paciente**. Nace cuando el orientador lo registra con su
-  orden médica (`GeneraTicketDeLaVisita` en Create/EditPaciente) y lleva dos identificadores:
-  - `numero` (`SP-LA30-20261003-A023`) **único en todo el sistema** — es lo que busca entrega.
-  - `turno` (`A-023`) corto, por sede y día — es lo que ve el paciente.
+- El ticket **es la visita del paciente**. Nace en **Orientación**
+  (`/admin/orientacion`), cuando el orientador carga la fórmula, y lleva dos identificadores:
+  - `numero` (`TK-PRP-261005-0060`) **único en todo el sistema** — es lo que busca entrega.
+  - `turno` (`0060`) corto, por sede y día — es lo que ve el paciente.
   El número lleva sede y fecha, así que el mismo turno puede existir en dos sedes
   el mismo día. Por eso **el contrato con entrega no cambia**.
+  Los emitidos antes del 2026-10-06 conservan el formato viejo (`SP-LA30-20261003-A023`):
+  entrega los busca por número exacto, así que reescribirlos sería perderlos.
+- **El turno no lleva prefijo de cola**: es solo el consecutivo de la sede. Por eso
+  quien numera es la **sede** y no la cola (`unique(sede_id, fecha)` en
+  `contadores_turno`): con cada cola contando aparte, la general y la de alto costo
+  sacarían el mismo `0060` el mismo día y `TicketConsultaDb` encontraría dos.
+  Migración: `2026_10_06_120000_turno_por_sede_sin_prefijo`.
 - **Nace sin medicamentos**, en estado `generado`: los captura farmacia al alistar.
   `listo` y `parcial` son los dos estados que el módulo de entrega atiende.
-- La cola la decide `colas.atiende_alto_costo`, no el prefijo: se reconfigura por sede.
+- **El alto costo lo marca farmacia al alistar, no el orientador**: el orientador no
+  conoce los medicamentos, así que no puede clasificarlos. Es **solo una etiqueta**: no
+  decide cola ni turno, que para entonces ya están dados. Queda en la auditoría.
+  Las colas «Alto costo y oncológicos» quedaron desactivadas en todas las sedes
+  (`2026_10_06_130000_alto_costo_lo_marca_farmacia`); `colas.atiende_alto_costo` sigue
+  en la tabla pero ya no enruta nada. Todos los tickets nacen en la cola general.
+- `soportes.alto_costo_oncologico` quedó nullable: `null` = «no se preguntó».
 - **Si la sede no tiene colas, el paciente igual queda registrado** con su orden médica
   y se avisa: perder la orientación por un problema de configuración es peor.
+  Esa fórmula se completa después desde Orientación, sin volver a tomar las fotos.
 - Prioridad `normal` o `preferencial`; se **sugiere** por edad (≥60) y discapacidad
   según Savia, pero el orientador decide. Los preferenciales se llaman de primeras.
 - Pantalla **Tickets** con pestañas Por alistar / Listos / Todos, filtrada por sede.
-  No se crea ni se edita desde ahí. Módulo `tickets` (ver, alistar, anular).
+  No se crea ni se edita desde ahí. Módulo `tickets` (ver, alistar, anular, imprimir).
 - **Conexión con entrega:** `TicketConsultaDb` reemplazó al mock, así que Atender entrega
   lee tickets reales. Se puede buscar por número o por el turno corto del día en la sede.
   Al registrar la atención, el ticket queda `entregado` o `parcial` por el puerto
   `TicketCierreInterface`, disparado desde `SincronizarEstadoDelTicket` al guardarse una
   `Entrega`: **no se tocó el código del módulo de entrega**, solo se le agregó la
   validación de sede que el contrato ya pedía.
-- Detalle: `docs/tickets.md` y `docs/contrato-ticket-entrega.md`.
+- Detalle: `docs/tickets.md`, `docs/contrato-ticket-entrega.md` y `docs/impresion-del-ticket.md`.
+## Impresión del ticket
+- `GET /tickets/{ticket}/imprimir` → `TicketImpresionController` + la vista
+  `resources/views/tickets/impresion.blade.php`. Térmica de 80 mm, CSS embebido
+  (el panel no compila Tailwind), monospace en mayúsculas y `window.print()` al cargar.
+- Lleva, en este orden: `SEDE: <etiqueta>`, el turno en grande, el número, `PACIENTE`
+  con su nombre, fecha y hora, `PRIORIDAD: NORMAL|PREFERENCIAL` y la caja
+  `ALERTA DE INGRESO` con el nombre de la sede.
+- **El nombre del paciente sí va** —tiene que reconocer su papel—; **lo clínico no**:
+  ni su documento, ni los medicamentos, ni el nombre de la cola (delataría alto costo),
+  ni el motivo de la prioridad. La línea: un ticket se queda en un mostrador y lo recoge
+  cualquiera; a nombre de quién es no cuenta nada de su salud, a qué cola va sí. Hay una
+  prueba que falla si algo clínico se asoma.
+- **El código de barras todavía no está**: el sitio queda marcado con un comentario en
+  la vista, para cuando se confirme que hay escáner en el ingreso.
+- Botón «Imprimir ticket» en la notificación al generarlo; acción «Imprimir» en el
+  listado y en la ficha de Tickets.
+- Permiso `tickets.imprimir`, **aparte de `tickets.ver`**: el ORIENTADOR genera el ticket
+  y tiene que poder imprimírselo al paciente, pero no entra al listado. DISPENSADOR no lo
+  lleva. Cada quien imprime solo lo de su sede, salvo el administrador.
+- Como `RolSeeder` usa `firstOrCreate` y no pisa roles existentes, la migración
+  `2026_10_06_110000_dar_permiso_de_imprimir_al_orientador` se lo agrega al rol que ya
+  esté en la base. **Solo agrega**, nunca quita lo que el administrador haya ajustado.
+## Cierre del día
+- `php artisan tickets:cerrar-dia` vence lo que nadie alcanzó a atender en días pasados.
+  Programado a las 2:00 a.m. en `routes/console.php`; correrlo a mano hace lo mismo.
+- Vencen `generado`, `en_alistamiento` y `listo`. **`parcial` no vence**: ese paciente
+  sí fue atendido y los faltantes son los que vuelve a reclamar otro día, y entrega los
+  encuentra por número sin importar la fecha.
+- **Cierra hasta ayer, nunca el día en curso.** Mirar solo hacia atrás lo hace
+  idempotente: si un día no corre, al siguiente recoge lo que quedó.
+- Deja **una línea de auditoría por sede y por corrida** (`cerro_dia`), no una por
+  ticket: el `update` masivo no dispara el trait a propósito.
+- `estado_sala` no se toca: así se distingue «nadie lo llamó» de «no se presentó».
+- Detalle: `docs/cierre-del-dia.md`.
 ## Colas, ventanillas y turnos
-- **Colas por sede** con un prefijo (`A`, `B`) que arma el turno del paciente: `A-023`.
+- **Colas por sede.** Su `prefijo` (`A`, `B`) **ya no arma el turno**: quedó como
+  etiqueta corta para distinguirlas en pantalla («Dispensación general (A)»).
   Ventanillas por sede, sin amarrarse a una cola: quien llama elige de cuál.
-- **El consecutivo es por cola y por día** y se reinicia cada mañana. Vive en
-  `contadores_turno` con `unique(cola_id, fecha)`, y `GeneradorDeTurnos` lo toma con
+- **El consecutivo es por sede y por día** y se reinicia cada mañana. Vive en
+  `contadores_turno` con `unique(sede_id, fecha)`, y `GeneradorDeTurnos` lo toma con
   `insertOrIgnore` + `lockForUpdate` dentro de una transacción: varios orientadores
   pidiendo turno a la vez nunca sacan el mismo número.
-- Pedir un turno: `app(GeneradorDeTurnos::class)->siguiente($cola)`.
+- Pedir un turno: `app(GeneradorDeTurnos::class)->siguiente($sede)`.
+- Una cola «ya entregó turnos» lo dicen **sus tickets**, no el contador: el contador es
+  de la sede, así que una cola nueva en una sede que ya atendió hoy parecería usada.
 - **Todo separado por sede:** el trait `FiltraPorSede` filtra el listado por
   `users.sede_id` y fija el campo Sede del formulario. El administrador ve todas.
   Es el patrón que reutilizan los módulos nuevos.

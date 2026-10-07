@@ -4,7 +4,6 @@ namespace App\Filament\Resources\PacienteResource\Pages;
 
 use App\Filament\Resources\PacienteResource;
 use App\Filament\Resources\PacienteResource\Concerns\AvisaSobreSavia;
-use App\Filament\Resources\PacienteResource\Concerns\GeneraTicketDeLaVisita;
 use App\Filament\Resources\PacienteResource\Concerns\MuestraAvisosDeSavia;
 use App\Models\Paciente;
 use Filament\Actions\Action;
@@ -14,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class CreatePaciente extends CreateRecord implements AvisaSobreSavia
 {
-    use GeneraTicketDeLaVisita, MuestraAvisosDeSavia;
+    use MuestraAvisosDeSavia;
 
     protected static string $resource = PacienteResource::class;
 
@@ -57,19 +56,19 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
                 'wire:loading.attr' => 'disabled',
                 'wire:target' => 'create',
             ]), [
-            $this->getCreateFormAction()
-                // El mismo flujo sirve para registrar y para actualizar: el botón
-                // dice lo que de verdad va a pasar.
-                ->label(fn (): string => $this->pacienteExistente() !== null
-                    ? 'Actualizar paciente'
-                    : 'Crear paciente')
-                ->hidden($sinConsulta),
-            ...(static::canCreateAnother()
-                ? [$this->getCreateAnotherFormAction()
-                    // Crear otro solo tiene sentido cuando de verdad se está creando.
-                    ->hidden(fn (): bool => $sinConsulta() || $this->pacienteExistente() !== null)]
-                : []),
-        ]);
+                $this->getCreateFormAction()
+                    // El mismo flujo sirve para registrar y para actualizar: el botón
+                    // dice lo que de verdad va a pasar.
+                    ->label(fn (): string => $this->pacienteExistente() !== null
+                        ? 'Actualizar paciente'
+                        : 'Crear paciente')
+                    ->hidden($sinConsulta),
+                ...(static::canCreateAnother()
+                    ? [$this->getCreateAnotherFormAction()
+                        // Crear otro solo tiene sentido cuando de verdad se está creando.
+                        ->hidden(fn (): bool => $sinConsulta() || $this->pacienteExistente() !== null)]
+                    : []),
+            ]);
     }
 
     /**
@@ -108,6 +107,11 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
     /**
      * Si el documento ya está en SISPAM no se crea un duplicado: se actualiza
      * ese paciente. El redirect lleva igual a su ficha.
+     *
+     * **Aquí no nace ningún ticket.** Registrar a alguien y atender su visita
+     * son dos cosas distintas, y mezclarlas era lo que hacía largo este
+     * formulario: las visitas se abren en Orientación, que es donde se toma la
+     * fórmula. Ver `docs/orientacion.md`.
      */
     protected function handleRecordCreation(array $data): Model
     {
@@ -116,15 +120,7 @@ class CreatePaciente extends CreateRecord implements AvisaSobreSavia
             'numero_documento' => $data['numero_documento'],
         ]);
 
-        $soporte = PacienteResource::separarSoporte($data);
-        $datosTicket = PacienteResource::separarDatosDelTicket($data, $soporte);
-
         $paciente->fill($data)->save();
-
-        // La orden médica abre una visita: eso es lo que genera el ticket.
-        if ($soporte !== null) {
-            $this->generarTicketDeLaVisita($paciente, $soporte, $datosTicket);
-        }
 
         return $paciente;
     }

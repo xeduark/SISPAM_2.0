@@ -41,13 +41,24 @@ class SedeResource extends Resource
                 Forms\Components\TextInput::make('nombre')
                     ->required()
                     ->maxLength(255),
+                // Tres caracteres: es lo que cabe cómodo en el ticket impreso
+                // de 80 mm y lo que se alcanza a leer de un vistazo.
                 Forms\Components\TextInput::make('codigo')
                     ->label('Código')
-                    ->helperText('Va dentro del número del ticket: SP-LA30-20261003-A023.')
-                    ->maxLength(6)
-                    ->alphaNum()
+                    ->helperText('Tres letras o números. Va dentro del número del ticket y en el ticket impreso: SP-PRP-20261005-A023.')
+                    ->required()
+                    ->length(3)
+                    // Se valida sin distinguir mayúsculas porque se guarda en
+                    // mayúsculas de todos modos: escribir «prp» no es un error.
+                    ->rule('regex:/^[A-Za-z0-9]{3}$/')
+                    ->validationMessages([
+                        'regex' => 'El código son exactamente 3 letras o números, sin espacios ni tildes.',
+                    ])
                     ->unique(ignoreRecord: true)
-                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null),
+                    // Se guarda y se valida en mayúsculas, aunque lo escriban abajo.
+                    ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null)
+                    ->formatStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null),
                 Forms\Components\TextInput::make('direccion')
                     ->label('Dirección')
                     ->maxLength(255),
@@ -68,6 +79,13 @@ class SedeResource extends Resource
                 Tables\Columns\TextColumn::make('nombre')
                     ->searchable()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('codigo')
+                    ->label('Código')
+                    ->badge()
+                    ->color('primary')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('direccion')
                     ->label('Dirección')
                     ->searchable(),

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Entrega;
 
+use App\Contracts\Ticket\Dto\TicketDto;
 use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Filament\Pages\AtenderEntrega;
 use App\Filament\Pages\ReporteEntregas;
@@ -326,9 +327,9 @@ class EntregaModuloTest extends TestCase
         {
             public function __construct(private $base) {}
 
-            public function buscarPorNumero(string $numero): ?\App\Contracts\Ticket\Dto\TicketDto
+            public function buscarPorNumero(string $numero): ?TicketDto
             {
-                return new \App\Contracts\Ticket\Dto\TicketDto(
+                return new TicketDto(
                     numero: $this->base->numero,
                     estado: 'entregado',
                     sedeId: $this->base->sedeId,

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Tickets;
 
+use App\Contracts\Ticket\Dto\TicketDto;
 use App\Contracts\Ticket\TicketCierreInterface;
 use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Filament\Pages\AtenderEntrega;
@@ -43,7 +44,7 @@ class IntegracionEntregaTest extends TestCase
         // las firmas de las entregas locales con el mismo id.
         Storage::fake('local');
 
-        $this->sede = Sede::factory()->create(['nombre' => 'La 30', 'codigo' => 'LA30']);
+        $this->sede = Sede::factory()->create(['nombre' => 'LA 30', 'codigo' => 'L30']);
         Cola::factory()->create([
             'sede_id' => $this->sede->id,
             'prefijo' => 'A',
@@ -99,7 +100,7 @@ class IntegracionEntregaTest extends TestCase
      * @param  array<string, float>  $entregadasPorCodigo  codigo => cantidad_entregada
      * @return list<array<string, mixed>>
      */
-    private function itemsDesdeDto(\App\Contracts\Ticket\Dto\TicketDto $dto, array $entregadasPorCodigo, array $motivos = []): array
+    private function itemsDesdeDto(TicketDto $dto, array $entregadasPorCodigo, array $motivos = []): array
     {
         return collect($dto->items)->map(function ($item) use ($entregadasPorCodigo, $motivos): array {
             $entregada = (float) ($entregadasPorCodigo[$item->codigo] ?? 0);
@@ -194,7 +195,7 @@ class IntegracionEntregaTest extends TestCase
     {
         $ticket = $this->ticketListo();
 
-        // En el mostrador el paciente muestra «A-001», no el número largo.
+        // En el mostrador el paciente muestra «0001», no el número largo.
         $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->turno);
 
         $this->assertNotNull($dto);
@@ -366,7 +367,7 @@ class IntegracionEntregaTest extends TestCase
 
         $dtoTras = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
         $this->assertFalse($dtoTras->listoParaEntrega());
-        $this->assertTrue(app(\App\Services\Entrega\SaldoTicket::class)->ticketCompletamenteDispensado($dtoTras));
+        $this->assertTrue(app(SaldoTicket::class)->ticketCompletamenteDispensado($dtoTras));
 
         // Con Ticket real el estado pasa a `entregado`: se muestra bloqueado, no «Sin ticket».
         Livewire::test(AtenderEntrega::class)
@@ -406,7 +407,7 @@ class IntegracionEntregaTest extends TestCase
         $this->assertNull($ticket->cerrado_en);
 
         $dtoTras = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
-        $pendientes = collect(app(\App\Services\Entrega\SaldoTicket::class)->lineasPendientes($dtoTras))
+        $pendientes = collect(app(SaldoTicket::class)->lineasPendientes($dtoTras))
             ->mapWithKeys(fn (array $l) => [$l['item']->codigo => $l['pendiente']]);
 
         $this->assertSame(['MED-002' => 15.0, 'MED-003' => 30.0], $pendientes->all());
@@ -439,7 +440,7 @@ class IntegracionEntregaTest extends TestCase
         ]));
 
         $dtoParcial = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
-        $pendientes = app(\App\Services\Entrega\SaldoTicket::class)->lineasPendientes($dtoParcial);
+        $pendientes = app(SaldoTicket::class)->lineasPendientes($dtoParcial);
 
         $segunda = $this->registrarPresencial($ticket->numero, collect($pendientes)->map(fn (array $linea): array => [
             'ticket_item_id' => $linea['item']->id,
@@ -459,7 +460,7 @@ class IntegracionEntregaTest extends TestCase
         $this->assertNotNull($ticket->cerrado_en);
 
         $dtoFinal = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
-        $this->assertTrue(app(\App\Services\Entrega\SaldoTicket::class)->ticketCompletamenteDispensado($dtoFinal));
+        $this->assertTrue(app(SaldoTicket::class)->ticketCompletamenteDispensado($dtoFinal));
         $this->assertFalse($dtoFinal->listoParaEntrega());
 
         Livewire::test(AtenderEntrega::class)

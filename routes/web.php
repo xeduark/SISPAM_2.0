@@ -2,9 +2,11 @@
 
 use App\Http\Controllers\ActaEntregaController;
 use App\Http\Controllers\Auth\AuthentikController;
+use App\Http\Controllers\MiniaturaDeFormulaController;
 use App\Http\Controllers\OrdenEntregaController;
 use App\Http\Controllers\OrdenMedicaController;
 use App\Http\Controllers\SalaController;
+use App\Http\Controllers\TicketImpresionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect('/admin'));
@@ -23,6 +25,24 @@ Route::middleware('auth')->get('/tickets/{ticket}/orden-entrega', [OrdenEntregaC
 // Acta de una entrega: lo entregado con lote, pendientes, lo que no se dispensa y la firma.
 Route::middleware('auth')->get('/entregas/{entrega}/acta', [ActaEntregaController::class, 'mostrar'])
     ->name('entregas.acta');
+
+/*
+ * La miniatura de la fórmula, para la galería de la ficha. Mismo permiso y
+ * mismo disco privado que el original; lo que no hace es dejar una línea de
+ * auditoría por imagen, porque una miniatura de 400 px no se lee. Entrar a la
+ * galería sí queda registrado, una sola vez. Ver `MiniaturaDeFormulaController`.
+ */
+Route::middleware('auth')->get('/soportes/{soporte}/miniatura', [MiniaturaDeFormulaController::class, 'mostrar'])
+    ->name('soportes.miniatura');
+
+/*
+ * El ticket impreso que se lleva el paciente. Exige sesión y el permiso
+ * `tickets.imprimir` —aparte de `tickets.ver`, porque el orientador genera el
+ * ticket pero no entra al listado—, y solo deja imprimir lo de la sede propia.
+ * Nunca sale nada del paciente ni de su salud. Ver `TicketImpresionController`.
+ */
+Route::middleware('auth')->get('/tickets/{ticket}/imprimir', [TicketImpresionController::class, 'mostrar'])
+    ->name('tickets.imprimir');
 
 /*
  * Pantalla de la sala de espera. Es **pública a propósito**: el televisor de la

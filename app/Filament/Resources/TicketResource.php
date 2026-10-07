@@ -81,6 +81,26 @@ class TicketResource extends Resource
         return 'warning';
     }
 
+    /**
+     * Si este usuario puede imprimir este ticket.
+     *
+     * Las mismas dos condiciones que exige la ruta: el permiso
+     * `tickets.imprimir` —aparte de `ver`— y que el ticket sea de su sede,
+     * salvo que sea administrador. Se comprueba aquí solo para no mostrar un
+     * botón que llevaría a un 403; quien manda es
+     * `TicketImpresionController`.
+     */
+    public static function sePuedeImprimir(Ticket $ticket): bool
+    {
+        $usuario = auth()->user();
+
+        if ($usuario === null || ! $usuario->puede('tickets.imprimir')) {
+            return false;
+        }
+
+        return $usuario->es_administrador || (int) $ticket->sede_id === (int) $usuario->sede_id;
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -133,6 +153,7 @@ class TicketResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede')
+                    ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -164,7 +185,7 @@ class TicketResource extends Resource
                     ->falseLabel('Sin alto costo'),
                 Tables\Filters\SelectFilter::make('sede_id')
                     ->label('Sede')
-                    ->options(fn (): array => Sede::orderBy('nombre')->pluck('nombre', 'id')->all())
+                    ->options(fn (): array => Sede::opciones())
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 Tables\Filters\Filter::make('solo_hoy')
                     ->label('Solo los de hoy')
@@ -172,6 +193,14 @@ class TicketResource extends Resource
                     ->default(),
             ])
             ->actions([
+                // Reimprimir el papel: el paciente lo perdió o la impresora
+                // se atascó. Es un permiso aparte de `ver`.
+                Tables\Actions\Action::make('imprimir')
+                    ->label('Imprimir')
+                    ->icon('heroicon-m-printer')
+                    ->color('gray')
+                    ->visible(fn (Ticket $record): bool => static::sePuedeImprimir($record))
+                    ->url(fn (Ticket $record): string => route('tickets.imprimir', $record), shouldOpenInNewTab: true),
                 Tables\Actions\Action::make('alistar')
                     ->label('Alistar')
                     ->icon('heroicon-m-clipboard-document-check')
@@ -182,6 +211,7 @@ class TicketResource extends Resource
                     ->modalDescription('Captura los medicamentos de la orden médica. Al guardar, el ticket queda listo para entrega.')
                     ->modalSubmitActionLabel('Dejar listo')
                     ->fillForm(fn (Ticket $record): array => [
+                        'alto_costo' => (bool) $record->alto_costo,
                         'items' => $record->items->map(fn ($item): array => [
                             'codigo' => $item->codigo,
                             'nombre' => $item->nombre,
@@ -222,10 +252,23 @@ class TicketResource extends Resource
                             ->defaultItems(1)
                             ->addActionLabel('Agregar medicamento')
                             ->reorderable(false),
+
+                        // Lo marca farmacia, no el orientador: aquí es donde se
+                        // ven los medicamentos. Sirve para identificar el
+                        // ticket, no para mandarlo a otra fila.
+                        Forms\Components\Toggle::make('alto_costo')
+                            ->label('Fórmula de alto costo u oncológica')
+                            ->helperText('Queda como etiqueta del ticket. No cambia el turno ni la fila del paciente.')
+                            ->default(false),
                     ])
                     ->action(function (Ticket $record, array $data, AlistarTicket $alistar): void {
                         try {
-                            $alistar->handle($record, auth()->user(), $data['items'] ?? []);
+                            $alistar->handle(
+                                $record,
+                                auth()->user(),
+                                $data['items'] ?? [],
+                                (bool) ($data['alto_costo'] ?? false),
+                            );
                         } catch (\InvalidArgumentException $e) {
                             Notification::make()
                                 ->title('No se pudo alistar')
@@ -298,7 +341,9 @@ class TicketResource extends Resource
                             ->formatStateUsing(fn (string $state): string => Ticket::ESTADOS[$state] ?? $state)
                             ->color(fn (string $state): string => Ticket::COLORES_ESTADO[$state] ?? 'gray'),
                         Infolists\Components\TextEntry::make('cola.nombre')->label('Cola'),
-                        Infolists\Components\TextEntry::make('sede.nombre')->label('Sede'),
+                        Infolists\Components\TextEntry::make('sede.nombre')
+                            ->label('Sede')
+                            ->formatStateUsing(fn ($record): string => $record->sede?->etiqueta ?? '—'),
                         Infolists\Components\TextEntry::make('fecha')->label('Fecha')->date('d/m/Y'),
                         Infolists\Components\TextEntry::make('prioridad')
                             ->label('Prioridad')

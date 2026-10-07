@@ -3,7 +3,6 @@
 namespace App\Filament\Pages;
 
 use App\Models\Entrega;
-use App\Models\EntregaItem;
 use App\Models\Sede;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -57,7 +56,7 @@ class ReporteEntregas extends Page implements HasForms
                 Forms\Components\DatePicker::make('hasta')->label('Hasta')->required(),
                 Forms\Components\Select::make('sede_id')
                     ->label('Sede de atención')
-                    ->options(Sede::query()->orderBy('nombre')->pluck('nombre', 'id'))
+                    ->options(Sede::opciones())
                     ->searchable()
                     ->placeholder('Todas'),
                 Forms\Components\Select::make('tipo')

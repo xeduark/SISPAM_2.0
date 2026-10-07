@@ -10,6 +10,7 @@ use App\Models\Auditoria;
 use App\Models\Cola;
 use App\Models\Rol;
 use App\Models\Sede;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Ventanilla;
 use App\Services\Turnos\GeneradorDeTurnos;
@@ -46,89 +47,92 @@ class ColasYVentanillasTest extends TestCase
      *  El turno
      * ------------------------------------------------------------------ */
 
-    public function test_el_turno_lleva_el_prefijo_de_la_cola_y_arranca_en_uno(): void
-    {
-        $cola = Cola::factory()->create(['prefijo' => 'A']);
-
-        $this->assertSame('A-001', $this->generador()->siguiente($cola));
-        $this->assertSame('A-002', $this->generador()->siguiente($cola));
-        $this->assertSame('A-003', $this->generador()->siguiente($cola));
-    }
-
-    public function test_cada_cola_lleva_su_propio_consecutivo(): void
+    public function test_el_turno_es_solo_el_consecutivo_y_arranca_en_uno(): void
     {
         $sede = Sede::factory()->create();
-        $general = Cola::factory()->create(['sede_id' => $sede->id, 'prefijo' => 'A']);
-        $altoCosto = Cola::factory()->create(['sede_id' => $sede->id, 'prefijo' => 'B']);
 
-        $this->generador()->siguiente($general);
-        $this->generador()->siguiente($general);
-
-        // La otra cola no heredó el consecutivo.
-        $this->assertSame('B-001', $this->generador()->siguiente($altoCosto));
-        $this->assertSame('A-003', $this->generador()->siguiente($general));
+        $this->assertSame('0001', $this->generador()->siguiente($sede));
+        $this->assertSame('0002', $this->generador()->siguiente($sede));
+        $this->assertSame('0003', $this->generador()->siguiente($sede));
     }
 
-    public function test_las_colas_de_sedes_distintas_no_se_pisan(): void
+    /**
+     * Quien numera es la sede, no la cola.
+     *
+     * Mientras el turno llevaba prefijo, que cada cola contara aparte estaba
+     * bien: `A-0060` y `B-0060` eran distintos. Sin prefijo dejan de serlo, y
+     * entrega busca el turno dentro de la sede: encontraría dos.
+     */
+    public function test_todas_las_colas_de_una_sede_comparten_el_consecutivo(): void
     {
-        $la30 = Cola::factory()->create(['sede_id' => Sede::factory()->create(['nombre' => 'La 30']), 'prefijo' => 'A']);
-        $bic = Cola::factory()->create(['sede_id' => Sede::factory()->create(['nombre' => 'BIC']), 'prefijo' => 'A']);
+        $sede = Sede::factory()->create();
+        Cola::factory()->create(['sede_id' => $sede->id, 'prefijo' => 'A']);
+        Cola::factory()->create(['sede_id' => $sede->id, 'prefijo' => 'B']);
+
+        $this->assertSame('0001', $this->generador()->siguiente($sede));
+        $this->assertSame('0002', $this->generador()->siguiente($sede));
+        $this->assertSame('0003', $this->generador()->siguiente($sede));
+    }
+
+    public function test_las_sedes_distintas_no_se_pisan(): void
+    {
+        $la30 = Sede::factory()->create(['nombre' => 'LA 30']);
+        $bic = Sede::factory()->create(['nombre' => 'EDIFICIO BIC']);
 
         $this->generador()->siguiente($la30);
         $this->generador()->siguiente($la30);
 
-        $this->assertSame('A-001', $this->generador()->siguiente($bic));
+        $this->assertSame('0001', $this->generador()->siguiente($bic));
     }
 
     public function test_el_consecutivo_se_reinicia_cada_dia(): void
     {
-        $cola = Cola::factory()->create(['prefijo' => 'A']);
+        $sede = Sede::factory()->create();
 
-        $this->generador()->siguiente($cola, now()->subDay());
-        $this->generador()->siguiente($cola, now()->subDay());
+        $this->generador()->siguiente($sede, now()->subDay());
+        $this->generador()->siguiente($sede, now()->subDay());
 
         // Hoy vuelve a empezar.
-        $this->assertSame('A-001', $this->generador()->siguiente($cola));
+        $this->assertSame('0001', $this->generador()->siguiente($sede));
 
         // Y el de ayer sigue donde iba.
-        $this->assertSame('A-003', $this->generador()->siguiente($cola, now()->subDay()));
+        $this->assertSame('0003', $this->generador()->siguiente($sede, now()->subDay()));
     }
 
-    public function test_el_turno_se_rellena_con_ceros_hasta_tres_cifras(): void
+    public function test_el_turno_se_rellena_con_ceros_hasta_cuatro_cifras(): void
     {
-        $cola = Cola::factory()->create(['prefijo' => 'AC']);
-
-        $this->assertSame('AC-001', $cola->formatearTurno(1));
-        $this->assertSame('AC-042', $cola->formatearTurno(42));
-        $this->assertSame('AC-999', $cola->formatearTurno(999));
-        // Pasado el 999 sigue creciendo, no se corta.
-        $this->assertSame('AC-1000', $cola->formatearTurno(1000));
+        $this->assertSame('0001', GeneradorDeTurnos::formatear(1));
+        $this->assertSame('0042', GeneradorDeTurnos::formatear(42));
+        $this->assertSame('9999', GeneradorDeTurnos::formatear(9999));
+        // Pasado el 9999 sigue creciendo, no se corta: mejor un turno de cinco
+        // cifras que dos pacientes con el mismo número.
+        $this->assertSame('10000', GeneradorDeTurnos::formatear(10000));
     }
 
     public function test_pedir_muchos_turnos_no_repite_ninguno(): void
     {
-        $cola = Cola::factory()->create(['prefijo' => 'A']);
+        $sede = Sede::factory()->create();
 
         $turnos = [];
         for ($i = 0; $i < 50; $i++) {
-            $turnos[] = $this->generador()->siguiente($cola);
+            $turnos[] = $this->generador()->siguiente($sede);
         }
 
         $this->assertCount(50, array_unique($turnos));
-        $this->assertSame('A-050', end($turnos));
-        $this->assertSame(50, $this->generador()->entregadosHoy($cola));
+        $this->assertSame('0050', end($turnos));
+        $this->assertSame(50, $this->generador()->entregadosHoy($sede));
     }
 
     public function test_entregados_hoy_no_consume_turno(): void
     {
-        $cola = Cola::factory()->create();
+        $sede = Sede::factory()->create();
 
-        $this->assertSame(0, $this->generador()->entregadosHoy($cola));
+        $this->assertSame(0, $this->generador()->entregadosHoy($sede));
 
-        $this->generador()->siguiente($cola);
+        $this->generador()->siguiente($sede);
 
-        $this->assertSame(1, $this->generador()->entregadosHoy($cola));
-        $this->assertSame(1, $this->generador()->entregadosHoy($cola));
+        $this->assertSame(1, $this->generador()->entregadosHoy($sede));
+        $this->assertSame(1, $this->generador()->entregadosHoy($sede));
     }
 
     /* ------------------------------------------------------------------ *
@@ -191,7 +195,7 @@ class ColasYVentanillasTest extends TestCase
         $this->assertSame($la30->id, $cola->sede_id);
         // El prefijo se guarda en mayúsculas.
         $this->assertSame('A', $cola->prefijo);
-        $this->assertSame('A-001', $cola->formatearTurno(1));
+        // El turno ya no lleva el prefijo: la etiqueta solo distingue la cola.
     }
 
     /* ------------------------------------------------------------------ *
@@ -210,12 +214,17 @@ class ColasYVentanillasTest extends TestCase
         Cola::create(['sede_id' => $la30->id, 'nombre' => 'Otra', 'prefijo' => 'A']);
     }
 
+    /**
+     * Lo dicen sus tickets, no el contador: ese pasó a ser de la sede, así que
+     * una cola recién creada en una sede que ya atendió hoy aparecería como
+     * usada sin haber entregado nada.
+     */
     public function test_una_cola_que_ya_entrego_turnos_no_se_elimina(): void
     {
         $la30 = Sede::factory()->create();
         $cola = Cola::factory()->create(['sede_id' => $la30->id]);
 
-        $this->generador()->siguiente($cola);
+        Ticket::factory()->create(['sede_id' => $la30->id, 'cola_id' => $cola->id]);
 
         $this->actingAs($this->encargadoDe($la30));
 

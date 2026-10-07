@@ -8,10 +8,8 @@ use App\Filament\Resources\PacienteResource\Pages;
 use App\Filament\Resources\PacienteResource\ResultadoConsulta;
 use App\Models\Auditoria;
 use App\Models\Paciente;
-use App\Models\Soporte;
 use App\Models\Ticket;
 use App\Services\Savia\SaviaClient;
-use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists;
@@ -25,6 +23,7 @@ use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\Rules\Unique;
 use Livewire\Component;
@@ -449,57 +448,6 @@ class PacienteResource extends Resource
                                     ->label('Observación')
                                     ->rows(3),
                             ]),
-
-                        // Toma de datos del orientador. Cada carga queda como un soporte del
-                        // paciente (ver `guardarSoporte`); el ticket se genera más adelante.
-                        Forms\Components\Wizard\Step::make('Orientación')
-                            ->description('Orden médica y alto costo')
-                            ->icon('heroicon-o-document-arrow-up')
-                            ->schema([
-                                Forms\Components\Radio::make('alto_costo_oncologico')
-                                    ->label('¿Paciente o medicamento de alto costo / oncológico?')
-                                    ->boolean('Sí', 'No')
-                                    ->inline()
-                                    ->required(),
-                                // Sin `capture`: en el celular el mismo botón ofrece la cámara
-                                // o los archivos del dispositivo.
-                                Forms\Components\FileUpload::make('orden_medica')
-                                    ->label('Orden médica')
-                                    ->helperText('Toma una foto con la cámara o carga la imagen o el PDF desde el dispositivo. Máximo 10 MB.')
-                                    ->disk('local')
-                                    ->directory('soportes/ordenes-medicas')
-                                    ->visibility('private')
-                                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
-                                    ->maxSize(10240)
-                                    // Al registrar la atención es obligatoria; al editar solo se
-                                    // carga si hay una orden nueva.
-                                    ->required(fn (string $operation): bool => $operation === 'create')
-                                    ->columnSpanFull(),
-
-                                // Los preferenciales se llaman de primeras en la sala.
-                                Forms\Components\Radio::make('prioridad')
-                                    ->label('Prioridad en la fila')
-                                    ->options(Ticket::PRIORIDADES)
-                                    ->inline()
-                                    ->default(Ticket::PRIORIDAD_NORMAL)
-                                    ->required()
-                                    ->live()
-                                    // Se sugiere según la edad y la discapacidad que reporta
-                                    // Savia; el orientador siempre puede cambiarlo.
-                                    ->afterStateHydrated(fn (Forms\Components\Radio $component, Forms\Get $get) => $component->state(
-                                        $component->getState() ?? static::prioridadSugerida($get),
-                                    ))
-                                    ->helperText(fn (Forms\Get $get): ?string => static::motivoSugerido($get) !== null
-                                        ? 'Según los datos de Savia, este paciente podría ser preferencial.'
-                                        : null),
-                                Forms\Components\Select::make('motivo_prioridad')
-                                    ->label('Motivo')
-                                    ->options(Ticket::MOTIVOS_PRIORIDAD)
-                                    ->default(fn (Forms\Get $get): ?string => static::motivoSugerido($get))
-                                    ->required(fn (Forms\Get $get): bool => $get('prioridad') === Ticket::PRIORIDAD_PREFERENCIAL)
-                                    ->visible(fn (Forms\Get $get): bool => $get('prioridad') === Ticket::PRIORIDAD_PREFERENCIAL),
-                            ])
-                            ->visible(fn (): bool => (bool) auth()->user()?->puede('orientacion.usar')),
                     ])
                         // Guardar solo aparece en el último paso y cada «Siguiente» valida los
                         // obligatorios del paso. La vista se pinta al renderizar, así los botones
@@ -805,34 +753,18 @@ class PacienteResource extends Resource
                     ->collapsible()
                     ->collapsed(),
 
-                Infolists\Components\Section::make('Órdenes médicas')
-                    ->description('Archivos privados. Abrirlos queda registrado en la auditoría.')
+                Infolists\Components\Section::make('Fórmulas médicas')
+                    ->description('Agrupadas por visita. Son archivos privados: abrir una queda registrado en la auditoría.')
                     ->icon('heroicon-o-document-text')
                     ->schema([
-                        Infolists\Components\RepeatableEntry::make('soportes')
+                        // La galería vive en su propia vista porque agrupa por
+                        // visita y lleva el visor: un RepeatableEntry no da
+                        // para eso. La vista pide las miniaturas por su ruta
+                        // protegida, nunca una URL pública.
+                        Infolists\Components\ViewEntry::make('soportes')
                             ->hiddenLabel()
-                            ->schema([
-                                Infolists\Components\TextEntry::make('created_at')
-                                    ->label('Cargada el')
-                                    ->dateTime('d/m/Y H:i'),
-                                Infolists\Components\TextEntry::make('cargadoPor.nombre_completo')
-                                    ->label('Cargada por')
-                                    ->placeholder('—'),
-                                Infolists\Components\TextEntry::make('alto_costo_oncologico')
-                                    ->label('Alto costo u oncológico')
-                                    ->badge()
-                                    ->formatStateUsing(fn (bool $state): string => $state ? 'Sí' : 'No')
-                                    ->color(fn (bool $state): string => $state ? 'warning' : 'gray'),
-                                Infolists\Components\TextEntry::make('orden_medica')
-                                    ->hiddenLabel()
-                                    ->formatStateUsing(fn (): string => 'Abrir la orden médica')
-                                    ->icon('heroicon-m-arrow-top-right-on-square')
-                                    ->color('primary')
-                                    ->url(fn (Soporte $record): string => route('soportes.orden-medica', $record))
-                                    ->openUrlInNewTab()
-                                    ->columnSpanFull(),
-                            ])
-                            ->columns(3),
+                            ->view('filament.pacientes.galeria-formulas')
+                            ->columnSpanFull(),
                     ])
                     // Son datos de salud: solo quien tenga el permiso ve esta sección.
                     ->visible(fn (Paciente $record): bool => (bool) auth()->user()?->puede('orientacion.ver_orden')
@@ -996,81 +928,48 @@ class PacienteResource extends Resource
      * ------------------------------------------------------------------ */
 
     /**
-     * Saca del formulario la toma de datos del orientador (no son columnas del
-     * paciente) y la devuelve lista para crear el soporte, o null si no hay orden.
+     * Las fórmulas que cargó el orientador, en el orden en que las dejó.
      *
-     * @return array<string, mixed>|null
+     * El estado del `FileUpload` llega de tres formas distintas: una ruta
+     * suelta, el `[uuid => ruta]` de cuando todavía no se deshidrató, y la
+     * lista ordenada de `multiple()`. El orden de la lista **es** el orden de
+     * las hojas: con `reorderable()`, moverlas en pantalla cambia este arreglo.
+     *
+     * Vive aquí, y no en la página de Orientación, porque va de la mano de
+     * `separarDatosDelTicket()`: las dos sacan del formulario lo que no es
+     * columna del paciente.
+     *
+     * @param  array<string, mixed>  $data
+     * @return list<string>
      */
-    public static function separarSoporte(array &$data): ?array
+    public static function separarOrdenesMedicas(array &$data): array
     {
         $orden = $data['orden_medica'] ?? null;
-        $altoCosto = (bool) ($data['alto_costo_oncologico'] ?? false);
+        // Por si queda en algún formulario viejo: el campo ya no se pregunta.
         unset($data['orden_medica'], $data['alto_costo_oncologico']);
 
-        // FileUpload a veces deja [uuid => ruta] si aún no se deshidrató.
-        if (is_array($orden)) {
-            $orden = collect($orden)->filter(fn ($v) => filled($v))->first();
-        }
-
-        return blank($orden) ? null : [
-            'orden_medica' => (string) $orden,
-            'alto_costo_oncologico' => $altoCosto,
-            'cargado_por' => auth()->id(),
-        ];
-    }
-
-    /**
-     * Qué motivo de prioridad sugieren los datos que trajo Savia.
-     *
-     * Es solo una sugerencia: el orientador decide. La edad se toma de la
-     * fecha de nacimiento y la discapacidad del campo que reporta el servicio.
-     */
-    public static function motivoSugerido(Forms\Get $get): ?string
-    {
-        $nacimiento = $get('fecha_nacimiento');
-
-        if (filled($nacimiento)) {
-            try {
-                if (Carbon::parse($nacimiento)->age >= Ticket::EDAD_ADULTO_MAYOR) {
-                    return 'adulto_mayor';
-                }
-            } catch (\Throwable) {
-                // Una fecha ilegible no debe romper el formulario.
-            }
-        }
-
-        $discapacidad = Paciente::normalizarTexto((string) $get('discapacidad'));
-
-        return ($discapacidad !== '' && $discapacidad !== 'no') ? 'discapacidad' : null;
-    }
-
-    public static function prioridadSugerida(Forms\Get $get): string
-    {
-        return static::motivoSugerido($get) !== null
-            ? Ticket::PRIORIDAD_PREFERENCIAL
-            : Ticket::PRIORIDAD_NORMAL;
+        return collect(Arr::wrap($orden))
+            ->filter(fn ($ruta): bool => is_string($ruta) && filled($ruta))
+            ->values()
+            ->all();
     }
 
     /**
      * Saca del formulario los datos que son del ticket y no del paciente.
      *
-     * El alto costo se lee del soporte y no de `$data` a propósito:
-     * `separarSoporte()` ya se lo llevó del formulario, así que pedirlo por
-     * parámetro deja la dependencia a la vista y no depende del orden en que
-     * se llamen los dos métodos.
+     * **El alto costo no está aquí**: lo marca farmacia al alistar, que es
+     * quien ve los medicamentos. El ticket nace con la marca en falso.
      *
      * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>|null  $soporte  Lo que devolvió `separarSoporte()`
-     * @return array{alto_costo: bool, prioridad: string, motivo_prioridad: ?string}
+     * @return array{prioridad: string, motivo_prioridad: ?string}
      */
-    public static function separarDatosDelTicket(array &$data, ?array $soporte = null): array
+    public static function separarDatosDelTicket(array &$data): array
     {
         $prioridad = $data['prioridad'] ?? Ticket::PRIORIDAD_NORMAL;
         $motivo = $data['motivo_prioridad'] ?? null;
         unset($data['prioridad'], $data['motivo_prioridad']);
 
         return [
-            'alto_costo' => (bool) ($soporte['alto_costo_oncologico'] ?? $data['alto_costo_oncologico'] ?? false),
             'prioridad' => $prioridad,
             // El motivo solo tiene sentido si es preferencial.
             'motivo_prioridad' => $prioridad === Ticket::PRIORIDAD_PREFERENCIAL ? $motivo : null,

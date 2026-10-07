@@ -28,6 +28,9 @@ class Soporte extends Model
     protected $fillable = [
         'ticket_id',
         'orden_medica',
+        'pagina',
+        'mime',
+        'miniatura',
         'alto_costo_oncologico',
         'cargado_por',
     ];
@@ -36,7 +39,29 @@ class Soporte extends Model
     {
         return [
             'alto_costo_oncologico' => 'boolean',
+            'pagina' => 'integer',
         ];
+    }
+
+    /**
+     * Si la fórmula es un PDF del escáner y no una foto.
+     *
+     * Decide el visor: las imágenes se amplían dentro de la pantalla, los PDF
+     * se abren en el del navegador. Se mira el `mime` guardado y, si falta
+     * —los soportes anteriores a esta columna lo tienen en null—, la extensión.
+     */
+    public function esPdf(): bool
+    {
+        if (filled($this->mime)) {
+            return str_contains(strtolower((string) $this->mime), 'pdf');
+        }
+
+        return strtolower(pathinfo((string) $this->orden_medica, PATHINFO_EXTENSION)) === 'pdf';
+    }
+
+    public function esImagen(): bool
+    {
+        return ! $this->esPdf();
     }
 
     public function descripcionParaAuditoria(): string
