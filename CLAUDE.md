@@ -214,9 +214,14 @@ hace falta que la IP del equipo esté autorizada por Savia.
   **El nombre original del archivo no se guarda**: llevaría el del paciente.
 - El campo es el `FileUpload` de Filament, no JS propio: cuadrícula
   (`panelLayout('grid')`), agregar sin perder (`appendFiles`), reordenar
-  (`reorderable`), ver grande y rotar (`imageEditor`) y **reducir a 2000 px en
+  (`reorderable`), ver grande y girar y **reducir a 2000 px en
   el navegador** (`imageResize*`), que de paso endereza por EXIF y borra los
   metadatos. Arrastrar una hoja cambia su `pagina`.
+- **El editor de la foto solo gira** (`App\Filament\Forms\Components\FileUploadSoloGiro`):
+  sin recortar, zoom, mover ni voltear. El recorte además **cortaba media hoja**
+  al girar (el recuadro de Cropper no gira con la imagen); sin recuadro se
+  guarda la imagen completa. Los campos de posición y tamaño se esconden con
+  CSS (`.sispam-solo-giro`), no se quitan: el JS de Filament les escribe.
 - **Sin `openable()` a propósito**: con archivos temporales no hay URL, y con
   los guardados caería a `Storage::url()` — una URL pública a un dato de salud.
 - **HEIC no está en `acceptedFileTypes` a propósito**: pedir `image/jpeg` es lo

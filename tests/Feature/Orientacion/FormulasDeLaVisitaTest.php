@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Orientacion;
 
+use App\Filament\Forms\Components\FileUploadSoloGiro;
 use App\Filament\Pages\Orientacion;
 use App\Filament\Resources\PacienteResource;
 use App\Models\Cola;
@@ -336,6 +337,66 @@ class FormulasDeLaVisitaTest extends TestCase
         $this->assertSame([1, 2], $soportes->pluck('pagina')->all());
         $this->assertSame([null, null], $soportes->pluck('ticket_id')->all());
         $this->assertSame(0, Ticket::count());
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  El editor de la foto: solo gira
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Para enderezar una hoja acostada basta girar. Recortar, hacer zoom,
+     * mover o voltear sobraban, y el recorte además cortaba media hoja al
+     * girar: el recuadro no gira con la imagen.
+     */
+    public function test_el_editor_de_la_foto_solo_ofrece_girar(): void
+    {
+        $acciones = FileUploadSoloGiro::make('orden_medica')->getImageEditorActions('');
+
+        $this->assertSame(['girar'], array_keys($acciones));
+        $this->assertCount(2, $acciones['girar']);
+        $this->assertStringStartsWith('editor.rotate(-90)', $acciones['girar'][0]['alpineClickHandler']);
+        $this->assertStringStartsWith('editor.rotate(90)', $acciones['girar'][1]['alpineClickHandler']);
+
+        foreach (['editor.zoom', 'editor.move', 'editor.scale', 'setDragMode'] as $quitado) {
+            foreach ($acciones['girar'] as $accion) {
+                $this->assertStringNotContainsString($quitado, $accion['alpineClickHandler']);
+            }
+        }
+    }
+
+    /**
+     * Sin recuadro de recorte, Cropper guarda la imagen completa. Se quita
+     * cada vez que el editor carga una imagen, junto con el arrastre y el zoom.
+     */
+    public function test_al_abrir_una_foto_se_quita_el_recorte_y_el_zoom(): void
+    {
+        $campo = FileUploadSoloGiro::make('orden_medica');
+
+        $this->assertTrue($campo->hasImageEditor());
+
+        // Filament lo escapa para el atributo HTML; el navegador lo lee así.
+        $alCargar = html_entity_decode($campo->getExtraAlpineAttributes()['x-on:ready'] ?? '', ENT_QUOTES);
+
+        $this->assertStringContainsString('editor.clear()', $alCargar);
+        $this->assertStringContainsString("editor.setDragMode('none')", $alCargar);
+        $this->assertStringContainsString('zoomable: false', $alCargar);
+        $this->assertStringContainsString('zoomOnTouch: false', $alCargar);
+    }
+
+    public function test_orientacion_usa_el_editor_que_solo_gira(): void
+    {
+        $this->consultar()
+            ->assertFormFieldExists(
+                'orden_medica',
+                'formularioVisita',
+                fn ($campo): bool => $campo instanceof FileUploadSoloGiro,
+            )
+            // Lo que llega al navegador: la clase que esconde los campos de
+            // posición y tamaño, el giro y nada de zoom.
+            ->assertSeeHtml('sispam-solo-giro')
+            ->assertSeeHtml('editor.rotate(90)')
+            ->assertDontSeeHtml('editor.zoom(')
+            ->assertDontSeeHtml('editor.scaleX(');
     }
 
     /* ------------------------------------------------------------------ *
