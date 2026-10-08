@@ -184,7 +184,7 @@ hacía falta ya venía, y escribirlo a mano habrían sido unas 400 líneas de JS
 | Miniaturas en cuadrícula | `panelLayout('grid')` |
 | Agregar más sin perder las anteriores | `appendFiles()` |
 | Reordenar arrastrando | `reorderable()` |
-| Ver en grande y rotar | `imageEditor()` |
+| Ver en grande y girar (nada más) | `FileUploadSoloGiro` (ver abajo) |
 | Reducir a 2000 px **en el navegador** | `imageResizeMode('contain')` + `imageResizeTargetWidth` |
 | Cámara o galería en el mismo botón | sin `capture` |
 
@@ -195,6 +195,31 @@ devuelve las hojas ya ordenadas, para que ninguna pantalla tenga que acordarse.
 **El redimensionado pasa en el navegador**, antes de subir: una foto de celular
 de 4 MB sale en unos 400 KB. Al redibujarse en el lienzo la imagen **se
 endereza sola** según el EXIF y **pierde los metadatos**, el GPS incluido.
+
+### El editor solo gira
+
+El lápiz de cada hoja la abre grande para revisarla y enderezarla. El editor de
+Filament (Cropper.js) traía recortar, zoom, mover, voltear y campos de
+posición y tamaño: para una fórmula sobraba todo menos girar.
+
+Y el recorte no solo sobraba: **cortaba media hoja**. El recuadro de recorte
+nace del tamaño de la foto y no gira con ella, así que al girar una foto
+apaisada se guardaba solo la franja que quedaba dentro del recuadro. Se
+comprobó con Cropper 1.6.2, la versión que trae Filament: girada con el
+recuadro, una foto de 400 × 300 salía como una franja de 2000 × 1500 con media
+imagen; sin recuadro sale completa, 300 × 400.
+
+`App\Filament\Forms\Components\FileUploadSoloGiro` es el `FileUpload` de
+Filament con tres cambios:
+
+| Qué | Cómo |
+|---|---|
+| Solo los botones de girar | `getImageEditorActions()`; tras cada giro la hoja se encaja en el visor |
+| Sin recuadro, sin arrastre, sin zoom | Al evento `ready` de Cropper: `clear()`, `setDragMode('none')` y apagar `zoomable` |
+| Sin los campos de posición y tamaño | CSS `.sispam-solo-giro` en `public/css/sispam-tema.css` |
+
+Los campos **se esconden, no se quitan**: el JS de Filament les escribe en cada
+cambio y fallaría sin ellos. «Reiniciar» sigue ahí y deshace los giros.
 
 ### Por qué no hay botón de «abrir»
 

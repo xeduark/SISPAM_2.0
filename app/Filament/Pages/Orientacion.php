@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Forms\Components\FileUploadSoloGiro;
 use App\Filament\Resources\PacienteResource;
 use App\Filament\Resources\PacienteResource\Concerns\AvisaSobreSavia;
 use App\Filament\Resources\PacienteResource\Concerns\MuestraAvisosDeSavia;
@@ -242,7 +243,7 @@ class Orientacion extends Page implements AvisaSobreSavia
                          * original, que es lo que no se puede procesar (GD no lo
                          * lee e imagick no está instalado).
                          */
-                        Forms\Components\FileUpload::make('orden_medica')
+                        FileUploadSoloGiro::make('orden_medica')
                             ->hiddenLabel()
                             ->helperText('Toma las fotos o escoge los archivos. JPG, PNG, WEBP o PDF, hasta 10 archivos de 10 MB cada uno.')
                             ->disk('local')
@@ -260,9 +261,11 @@ class Orientacion extends Page implements AvisaSobreSavia
                             ->panelLayout('grid')
                             ->reorderable()
                             /*
-                             * Tocar una la abre grande, para revisar que se
-                             * lea, y ahí mismo se endereza la que salió
-                             * acostada.
+                             * El lápiz de cada hoja la abre grande, para
+                             * revisar que se lea, y ahí mismo se endereza la
+                             * que salió acostada. **Solo se gira**: nada de
+                             * recortar ni hacer zoom (ver `FileUploadSoloGiro`,
+                             * que trae el editor ya puesto).
                              *
                              * Esto hace de «ver en grande» a propósito, en vez
                              * de `openable()`: mientras no se envía el
@@ -274,7 +277,6 @@ class Orientacion extends Page implements AvisaSobreSavia
                              * dato de salud. Verlas después de guardar es la
                              * galería, por la ruta protegida.
                              */
-                            ->imageEditor()
                             /*
                              * Se reduce **en el navegador** antes de subir: una
                              * foto de celular de 4 MB sale en unos 400 KB, que

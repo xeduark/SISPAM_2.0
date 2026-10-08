@@ -465,6 +465,22 @@ button.sispam-acta__check[disabled] {
     }
 }
 
+/*
+ * El editor de las fotos de la fórmula: solo gira (`FileUploadSoloGiro`).
+ *
+ * Se esconden los campos de posición, tamaño y rotación —el JS de Filament les
+ * escribe en cada cambio, así que tienen que seguir ahí— y el panel de abajo
+ * deja de medir 24rem en el celular: con dos botones de girar, ese espacio es
+ * de la foto.
+ */
+.sispam-solo-giro div:has(> label > input[x-ref="xPositionInput"]) {
+    display: none;
+}
+
+.sispam-solo-giro .h-96:has(input[x-ref="rotationInput"]) {
+    height: auto;
+}
+
 /* El aviso de que el paciente ya tiene una visita viva (§15, §17) */
 .sispam-visita-abierta {
     border-left: 4px solid rgb(var(--warning-600, 183 121 31));
