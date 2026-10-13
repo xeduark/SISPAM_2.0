@@ -10,6 +10,7 @@ use App\Models\Entrega;
 use App\Models\EntregaItem;
 use App\Models\Paciente;
 use App\Models\Sede;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +18,10 @@ use InvalidArgumentException;
 
 /**
  * Registra una atención de entrega a partir de un ticket consultado.
+ *
+ * El saldo pendiente se calcula **dentro** de la transacción, con la fila del
+ * ticket bloqueada (`lockForUpdate`), para que dos atenciones concurrentes no
+ * lean el mismo pendiente y sobredispensen.
  */
 class RegistrarEntrega
 {
@@ -41,10 +46,6 @@ class RegistrarEntrega
     {
         if (! $ticket->listoParaEntrega()) {
             throw new InvalidArgumentException('El ticket no está listo para entrega.');
-        }
-
-        if ($this->saldo->ticketCompletamenteDispensado($ticket)) {
-            throw new InvalidArgumentException('Este ticket ya fue dispensado completamente.');
         }
 
         if (! in_array($datos['tipo'], [Entrega::TIPO_PRESENCIAL, Entrega::TIPO_DOMICILIO], true)) {
@@ -94,35 +95,20 @@ class RegistrarEntrega
 
         $sedeId = (int) $ticket->sedeId;
 
-        $originales = collect($ticket->items)->keyBy(fn ($i) => (string) $i->id);
-        $itemsNormalizados = [];
+        return DB::transaction(function () use ($ticket, $usuario, $datos, $sedeId): Entrega {
+            // Bloqueo por ticket (no global): la segunda atención espera aquí y
+            // recalcula el pendiente ya con la primera entregada.
+            Ticket::query()
+                ->where('numero', $ticket->numero)
+                ->lockForUpdate()
+                ->first();
 
-        foreach ($datos['items'] as $item) {
-            $idLinea = (string) $item['ticket_item_id'];
-            $original = $originales->get($idLinea);
-            $cantidadTicket = $original ? (float) $original->cantidad : (float) ($item['cantidad_solicitada'] ?? 0);
-            $pendienteActual = $this->saldo->pendienteDeLinea($ticket->numero, $idLinea, $cantidadTicket);
-
-            if ($pendienteActual <= 0) {
-                throw new InvalidArgumentException(
-                    '«'.($item['nombre'] ?? $idLinea).'» ya no tiene cantidad pendiente por entregar.'
-                );
+            if ($this->saldo->ticketCompletamenteDispensado($ticket)) {
+                throw new InvalidArgumentException('Este ticket ya fue dispensado completamente.');
             }
 
-            // En reatención, cantidad_solicitada del formulario es el saldo pendiente.
-            $item['cantidad_solicitada'] = $pendienteActual;
-            $normalizado = $this->normalizarItem($item);
+            $itemsNormalizados = $this->itemsContraSaldoActual($ticket, $datos['items']);
 
-            if ($normalizado['cantidad_entregada'] > $pendienteActual) {
-                throw new InvalidArgumentException(
-                    '«'.$normalizado['nombre'].'»: no se puede entregar más de lo pendiente ('.$pendienteActual.').'
-                );
-            }
-
-            $itemsNormalizados[] = $normalizado;
-        }
-
-        return DB::transaction(function () use ($ticket, $usuario, $datos, $itemsNormalizados, $sedeId): Entrega {
             $pacienteId = $ticket->paciente->id
                 ?? Paciente::query()
                     ->where('tipo_documento', $ticket->paciente->tipoDocumento)
@@ -193,6 +179,55 @@ class RegistrarEntrega
 
             return $entrega->fresh(['items', 'domicilioEnvio', 'paciente']);
         });
+    }
+
+    /**
+     * Contrasta cada línea con el pendiente **actual** (ya bajo el lock del ticket).
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array{
+     *     ticket_item_id: string,
+     *     codigo: string,
+     *     nombre: string,
+     *     cantidad_solicitada: float,
+     *     cantidad_entregada: float,
+     *     cantidad_pendiente: float,
+     *     unidad: string,
+     *     resultado: string,
+     *     motivo: ?string
+     * }>
+     */
+    private function itemsContraSaldoActual(TicketDto $ticket, array $items): array
+    {
+        $originales = collect($ticket->items)->keyBy(fn ($i) => (string) $i->id);
+        $normalizados = [];
+
+        foreach ($items as $item) {
+            $idLinea = (string) $item['ticket_item_id'];
+            $original = $originales->get($idLinea);
+            $cantidadTicket = $original ? (float) $original->cantidad : (float) ($item['cantidad_solicitada'] ?? 0);
+            $pendienteActual = $this->saldo->pendienteDeLinea($ticket->numero, $idLinea, $cantidadTicket);
+
+            if ($pendienteActual <= 0) {
+                throw new InvalidArgumentException(
+                    '«'.($item['nombre'] ?? $idLinea).'» ya no tiene cantidad pendiente por entregar.'
+                );
+            }
+
+            // En reatención, cantidad_solicitada del formulario es el saldo pendiente.
+            $item['cantidad_solicitada'] = $pendienteActual;
+            $normalizado = $this->normalizarItem($item);
+
+            if ($normalizado['cantidad_entregada'] > $pendienteActual) {
+                throw new InvalidArgumentException(
+                    '«'.$normalizado['nombre'].'»: no se puede entregar más de lo pendiente ('.$pendienteActual.').'
+                );
+            }
+
+            $normalizados[] = $normalizado;
+        }
+
+        return $normalizados;
     }
 
     public function cambiarEstadoDomicilio(
