@@ -3,7 +3,7 @@
         <x-slot name="heading">Flujo de atención</x-slot>
         <ol class="list-decimal space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
             <li>Consulta el número de turno.</li>
-            <li>Elige la sede de atención y revisa los datos del paciente.</li>
+            <li>Revisa los datos del paciente (la sede es la del ticket; debes estar trabajando en ella).</li>
             <li>Indica las cantidades a entregar por medicamento.</li>
             <li>En presencial: registra receptor y firma. En domicilio: se prepara el envío.</li>
             <li>Revisa el resumen y confirma la entrega.</li>

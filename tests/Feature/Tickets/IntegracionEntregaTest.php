@@ -6,6 +6,7 @@ use App\Contracts\Ticket\Dto\TicketDto;
 use App\Contracts\Ticket\TicketCierreInterface;
 use App\Contracts\Ticket\TicketConsultaInterface;
 use App\Filament\Pages\AtenderEntrega;
+use App\Livewire\SelectorDeSede;
 use App\Models\Cola;
 use App\Models\DomicilioEnvio;
 use App\Models\Entrega;
@@ -75,6 +76,14 @@ class IntegracionEntregaTest extends TestCase
             ['codigo' => 'MED-001', 'nombre' => 'ACETAMINOFEN 500 MG', 'cantidad' => 20, 'unidad' => 'TAB'],
             ['codigo' => 'MED-002', 'nombre' => 'LOSARTAN 50 MG', 'cantidad' => 30, 'unidad' => 'TAB'],
         ]);
+    }
+
+    private function rolDispensador(): void
+    {
+        Rol::query()->firstOrCreate(
+            ['nombre' => 'DISPENSADOR'],
+            ['permisos' => ['entrega' => ['ver', 'atender']]],
+        );
     }
 
     /**
@@ -254,27 +263,26 @@ class IntegracionEntregaTest extends TestCase
             );
             $this->fail('Debió rechazar la entrega en sede distinta a la del ticket.');
         } catch (\InvalidArgumentException $e) {
+            // El dispensador de setUp está en LA 30; el ticket es de Centro.
+            $this->assertStringContainsString('pertenece a otra sede', $e->getMessage());
             $this->assertStringContainsString('Sede Centro', $e->getMessage());
-            $this->assertStringContainsString('Este ticket pertenece a la', $e->getMessage());
-            $this->assertStringContainsString('debe ser atendido en esa sede', $e->getMessage());
         }
 
         $this->assertDatabaseCount('entregas', 0);
     }
 
-    public function test_dispensador_con_perfil_en_otra_sede_puede_atender_si_el_ticket_es_de_centro(): void
+    public function test_misma_sede_activa_permite_dispensar(): void
     {
         $centro = Sede::factory()->create(['nombre' => 'Sede Centro', 'codigo' => 'CEN2', 'activa' => true]);
         Cola::factory()->create(['sede_id' => $centro->id, 'prefijo' => 'A', 'atiende_alto_costo' => false]);
-        $norte = Sede::factory()->create(['nombre' => 'Sede Norte', 'codigo' => 'NOR2', 'activa' => true]);
 
-        // Perfil habitual en Norte, pero el ticket (y la entrega) son de Centro.
         $dispensador = User::factory()->create([
-            'sede_id' => $norte->id,
+            'sede_id' => $centro->id,
             'roles' => ['DISPENSADOR'],
             'es_administrador' => false,
         ]);
-        Rol::create(['nombre' => 'DISPENSADOR', 'permisos' => ['entrega' => ['ver', 'atender']]]);
+        $dispensador->sedes()->sync([$centro->id]);
+        $this->rolDispensador();
 
         $ticket = $this->ticketListo(sede: $centro, items: [
             ['codigo' => 'MED-001', 'nombre' => 'ACETAMINOFEN 500 MG', 'cantidad' => 5, 'unidad' => 'TAB'],
@@ -285,7 +293,7 @@ class IntegracionEntregaTest extends TestCase
         Livewire::test(AtenderEntrega::class)
             ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
             ->call('buscar')
-            ->assertNotSet('ticket', null)
+            ->assertSet('ticketBloqueado', false)
             ->assertSet('atencion.sede_id', $centro->id);
 
         $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
@@ -297,8 +305,95 @@ class IntegracionEntregaTest extends TestCase
         );
 
         $this->assertSame($centro->id, $entrega->sede_id);
-        $this->assertNotSame($norte->id, $entrega->sede_id);
+        $this->assertSame($centro->id, $dispensador->fresh()->sede_id);
+    }
+
+    public function test_sede_activa_distinta_bloquea_consulta_y_registro_aunque_mande_sede_del_ticket(): void
+    {
+        $centro = Sede::factory()->create(['nombre' => 'Sede Centro', 'codigo' => 'CEN2', 'activa' => true]);
+        Cola::factory()->create(['sede_id' => $centro->id, 'prefijo' => 'A', 'atiende_alto_costo' => false]);
+        $norte = Sede::factory()->create(['nombre' => 'Sede Norte', 'codigo' => 'NOR2', 'activa' => true]);
+
+        $dispensador = User::factory()->create([
+            'sede_id' => $norte->id,
+            'roles' => ['DISPENSADOR'],
+            'es_administrador' => false,
+        ]);
+        $dispensador->sedes()->sync([$centro->id, $norte->id]);
+        $this->rolDispensador();
+
+        $ticket = $this->ticketListo(sede: $centro, items: [
+            ['codigo' => 'MED-001', 'nombre' => 'ACETAMINOFEN 500 MG', 'cantidad' => 5, 'unidad' => 'TAB'],
+        ]);
+
+        $this->actingAs($dispensador);
+
+        Livewire::test(AtenderEntrega::class)
+            ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
+            ->call('buscar')
+            ->assertSet('ticketBloqueado', true)
+            ->assertSee('pertenece a otra sede')
+            ->assertDontSee('Confirmar y registrar entrega');
+
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+
+        try {
+            // Intento directo: manda sede_id = Centro estando activo en Norte.
+            $this->registrarPresencial(
+                $ticket->numero,
+                $this->itemsDesdeDto($dto, ['MED-001' => 5]),
+                usuario: $dispensador,
+                sedeId: $centro->id,
+            );
+            $this->fail('Debió rechazar el registro desde otra sede activa.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('pertenece a otra sede', $e->getMessage());
+            $this->assertStringContainsString('Sede Centro', $e->getMessage());
+        }
+
+        $this->assertDatabaseCount('entregas', 0);
         $this->assertSame($norte->id, $dispensador->fresh()->sede_id);
+    }
+
+    public function test_multisede_puede_atender_tras_cambiar_a_la_sede_del_ticket(): void
+    {
+        $centro = Sede::factory()->create(['nombre' => 'Sede Centro', 'codigo' => 'CEN2', 'activa' => true]);
+        Cola::factory()->create(['sede_id' => $centro->id, 'prefijo' => 'A', 'atiende_alto_costo' => false]);
+        $norte = Sede::factory()->create(['nombre' => 'Sede Norte', 'codigo' => 'NOR2', 'activa' => true]);
+
+        $dispensador = User::factory()->create([
+            'sede_id' => $norte->id,
+            'roles' => ['DISPENSADOR'],
+            'es_administrador' => false,
+        ]);
+        $dispensador->sedes()->sync([$centro->id, $norte->id]);
+        $this->rolDispensador();
+
+        $ticket = $this->ticketListo(sede: $centro, items: [
+            ['codigo' => 'MED-001', 'nombre' => 'ACETAMINOFEN 500 MG', 'cantidad' => 5, 'unidad' => 'TAB'],
+        ]);
+
+        $this->actingAs($dispensador);
+
+        Livewire::test(SelectorDeSede::class)->call('cambiar', $centro->id);
+        $this->assertSame($centro->id, $dispensador->fresh()->sede_id);
+        $this->actingAs($dispensador->fresh());
+
+        Livewire::test(AtenderEntrega::class)
+            ->fillForm(['ticket_numero' => $ticket->numero], 'busquedaForm')
+            ->call('buscar')
+            ->assertSet('ticketBloqueado', false)
+            ->assertSet('atencion.sede_id', $centro->id);
+
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+        $entrega = $this->registrarPresencial(
+            $ticket->numero,
+            $this->itemsDesdeDto($dto, ['MED-001' => 5]),
+            usuario: $dispensador->fresh(),
+            sedeId: $centro->id,
+        );
+
+        $this->assertSame($centro->id, $entrega->sede_id);
     }
 
     public function test_entrega_historica_conserva_sede_del_ticket_si_usuario_cambia_de_sede(): void

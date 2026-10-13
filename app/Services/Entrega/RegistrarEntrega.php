@@ -68,8 +68,11 @@ class RegistrarEntrega
             throw new InvalidArgumentException('La entrega debe incluir al menos un medicamento.');
         }
 
-        // La sede de la entrega es siempre la del ticket: el paciente reclama
-        // donde se generó. No se usa usuario.sede_id (puede rotar de sede).
+        // Política estricta: sede activa del dispensador = sede del ticket =
+        // sede de la entrega. Cambiar de sede en el selector no reescribe
+        // histórico; solo define desde dónde se puede atender ahora.
+        $this->comprobarSedeDelDispensador($usuario, $ticket);
+
         $sedeTicket = Sede::query()->whereKey($ticket->sedeId)->first();
         if ($sedeTicket === null) {
             throw new InvalidArgumentException('El ticket no tiene una sede válida asociada.');
@@ -319,6 +322,52 @@ class RegistrarEntrega
             'resultado' => $resultado,
             'motivo' => $motivo,
         ];
+    }
+
+    /**
+     * El dispensador solo atiende tickets de la sede en la que está trabajando.
+     *
+     * También el administrador: conserva el selector para mudarse, pero no
+     * registra una entrega «a distancia». La comprobación va aquí porque el
+     * número completo del ticket se puede consultar desde cualquier sede.
+     */
+    private function comprobarSedeDelDispensador(User $usuario, TicketDto $ticket): void
+    {
+        if (! $usuario->puede('entrega.atender')) {
+            throw new InvalidArgumentException('No tienes permiso para registrar entregas.');
+        }
+
+        $sedeActiva = $usuario->sede;
+
+        if ($sedeActiva === null) {
+            throw new InvalidArgumentException(
+                'Tu usuario no tiene una sede activa. Elige una sede antes de registrar la entrega.'
+            );
+        }
+
+        if (! $sedeActiva->activa) {
+            throw new InvalidArgumentException(
+                'Tu sede activa («'.$sedeActiva->nombre.'») no está activa; no se pueden registrar dispensaciones.'
+            );
+        }
+
+        if (! $usuario->sedesDondePuedeTrabajar()->contains('id', $sedeActiva->getKey())) {
+            throw new InvalidArgumentException(
+                'No estás autorizado para trabajar en la sede «'.$sedeActiva->nombre.'».'
+            );
+        }
+
+        if ((int) $usuario->sede_id !== (int) $ticket->sedeId) {
+            $sedeTicket = Sede::query()->whereKey($ticket->sedeId)->first();
+            $detalle = $sedeTicket !== null
+                ? ' («'.$sedeTicket->nombre.'»)'
+                : '';
+
+            throw new InvalidArgumentException(
+                'Este ticket pertenece a otra sede'.$detalle
+                .'. Para atenderlo debes trabajar desde la sede donde fue generado.'
+            );
+        }
     }
 
     /**

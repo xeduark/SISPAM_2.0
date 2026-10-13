@@ -113,7 +113,7 @@ class AtenderEntrega extends Page implements HasForms
                                     ? "{$nombre} — los medicamentos se reclaman aquí (no se puede cambiar)"
                                     : "Sede #{$sedeId} — sede del ticket (no se puede cambiar)";
                             })
-                            ->helperText('El ticket queda amarrado a la sede donde se generó. La entrega se registra siempre en esa misma sede.'),
+                            ->helperText('Debes estar trabajando en esta sede (selector de la barra). La entrega se registra siempre aquí.'),
                         Forms\Components\Radio::make('tipo')
                             ->label('¿Cómo se entrega?')
                             ->options([
@@ -295,8 +295,27 @@ class AtenderEntrega extends Page implements HasForms
             return;
         }
 
-        // La sede de dispensación es la del ticket (no la del perfil del
-        // usuario: el dispensador puede rotar de sede). Se valida al registrar.
+        // Política estricta: hay que estar trabajando en la misma sede del
+        // ticket. El número completo no permite saltarse el filtro.
+        if (! $this->mismaSedeActivaQueElTicket($dto)) {
+            $this->ticket = $this->ticketAArray($dto);
+            $this->ticketBloqueado = true;
+            $this->mensajeBloqueo = $this->mensajeSedeDistinta($dto);
+            $this->atencionForm->fill([
+                'tipo' => Entrega::TIPO_PRESENCIAL,
+                'sede_id' => null,
+                'items' => [],
+            ]);
+
+            Notification::make()
+                ->title('Sede distinta')
+                ->body($this->mensajeBloqueo)
+                ->warning()
+                ->persistent()
+                ->send();
+
+            return;
+        }
 
         if (! $dto->listoParaEntrega()) {
             // El ticket existe: se muestra bloqueado, no «Sin ticket».
@@ -502,6 +521,26 @@ class AtenderEntrega extends Page implements HasForms
                 'indicaciones_entrega' => $ticket->paciente->indicacionesEntrega,
             ],
         ];
+    }
+
+    private function mismaSedeActivaQueElTicket(TicketDto $ticket): bool
+    {
+        $sedeId = auth()->user()?->sede_id;
+
+        return $sedeId !== null && (int) $sedeId === (int) $ticket->sedeId;
+    }
+
+    private function mensajeSedeDistinta(TicketDto $ticket): string
+    {
+        $nombre = Sede::query()->whereKey($ticket->sedeId)->value('nombre');
+
+        if (filled($nombre)) {
+            return 'Este ticket pertenece a otra sede («'.$nombre.'»). '
+                .'Para atenderlo debes trabajar desde la sede donde fue generado.';
+        }
+
+        return 'Este ticket pertenece a otra sede. '
+            .'Para atenderlo debes trabajar desde la sede donde fue generado.';
     }
 
     private function emitirAvisos(TicketDto $ticket): void

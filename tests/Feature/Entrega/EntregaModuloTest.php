@@ -443,10 +443,14 @@ class EntregaModuloTest extends TestCase
         $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SEDE-CROSS');
 
+        // Usuario activo en Norte intenta forzar sede_id=Centro en el payload
+        // (o al revés): la sede activa debe coincidir con la del ticket.
+        $usuario->update(['sede_id' => $sedeNorte->id]);
+
         try {
-            app(RegistrarEntrega::class)->handle($ticket, $usuario, [
+            app(RegistrarEntrega::class)->handle($ticket, $usuario->fresh(), [
                 'tipo' => Entrega::TIPO_PRESENCIAL,
-                'sede_id' => $sedeNorte->id,
+                'sede_id' => $sedeCentro->id,
                 'receptor_nombre' => 'A',
                 'receptor_documento' => '1',
                 'firma_contenido' => 'f',
@@ -454,10 +458,8 @@ class EntregaModuloTest extends TestCase
             ]);
             $this->fail('Debió rechazar la entrega en sede distinta.');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringContainsString(
-                'Este ticket pertenece a la Sede Centro y debe ser atendido en esa sede.',
-                $e->getMessage(),
-            );
+            $this->assertStringContainsString('pertenece a otra sede', $e->getMessage());
+            $this->assertStringContainsString('Sede Centro', $e->getMessage());
         }
 
         $this->assertDatabaseCount('entregas', 0);
@@ -471,17 +473,21 @@ class EntregaModuloTest extends TestCase
         $this->actingAs($usuario);
         $ticket = app(TicketConsultaInterface::class)->buscarPorNumero('T-SEDE-OFF');
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('no está activa');
+        try {
+            app(RegistrarEntrega::class)->handle($ticket, $usuario, [
+                'tipo' => Entrega::TIPO_PRESENCIAL,
+                'sede_id' => $sedeInactiva->id,
+                'receptor_nombre' => 'A',
+                'receptor_documento' => '1',
+                'firma_contenido' => 'f',
+                'items' => $this->itemsCompletos($ticket),
+            ]);
+            $this->fail('Debió rechazar la dispensación con sede activa inactiva.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('no está activa', $e->getMessage());
+        }
 
-        app(RegistrarEntrega::class)->handle($ticket, $usuario, [
-            'tipo' => Entrega::TIPO_PRESENCIAL,
-            'sede_id' => $sedeInactiva->id,
-            'receptor_nombre' => 'A',
-            'receptor_documento' => '1',
-            'firma_contenido' => 'f',
-            'items' => $this->itemsCompletos($ticket),
-        ]);
+        $this->assertDatabaseCount('entregas', 0);
     }
 
     /**
