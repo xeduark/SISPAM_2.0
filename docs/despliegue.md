@@ -177,7 +177,8 @@ nano .env
 Llena lo que está vacío:
 
 - `DB_PASSWORD`: la clave del paso 4.3.
-- Las de `AUTHENTIK_*`: las del proveedor en Authentik.
+- Las de `AUTHENTIK_*`: las del proveedor en Authentik, y en
+  `AUTHENTIK_API_TOKEN` el token de la cuenta de servicio (sección 10).
 - `SAVIA_USERNAME`, `SAVIA_PASSWORD`, y descomenta `SAVIA_ENDPOINT` y
   `SAVIA_ENDPOINT_TOKEN` con las direcciones de producción.
 
@@ -543,6 +544,24 @@ Lo que no depende del código. Márcalo antes de anunciar la salida.
       `https://consultasavia.comitedeestudiosmedicos.com.co/auth/authentik/callback`.
 - [ ] Tipo de cliente *Confidential*; el *Client ID* y el *Client Secret* van
       en `AUTHENTIK_CLIENT_ID` y `AUTHENTIK_CLIENT_SECRET`.
+- [ ] La cuenta de servicio con la que SISPAM crea las cuentas de quien se
+      registra en Usuarios. Con permisos justos:
+      1. **Directory → Users → Create Service account** `sispam-servicio`,
+         con *Create group* encendido: crea el grupo `sispam-servicio` con
+         ella adentro.
+      2. **Directory → Roles → Create** `SISPAM aprovisionamiento`, con estos
+         permisos globales y nada más: de *User*, «Can view», «Can add»,
+         «Can change» y «Reset Password»; de *Group*, «Can view» y «Can add».
+      3. **Directory → Groups →** `sispam-servicio` **→ Edit**: en *Roles*,
+         `SISPAM aprovisionamiento`.
+      4. **Directory → Tokens and App passwords → Create**: usuario
+         `sispam-servicio`, *Intent* **API** y *Expiring* **apagado** (si
+         queda encendido, vence a los 30 minutos). Su *Key* va en
+         `AUTHENTIK_API_TOKEN`.
+- [ ] Ese token se trata como una clave de administrador de Authentik: con
+      «Can add User», en Authentik 2024.8 se puede crear un usuario en
+      cualquier grupo. Solo en el `.env` del servidor y en el gestor de
+      contraseñas; si se filtra, se borra en *Tokens and App passwords*.
 - [ ] El slug de la aplicación va en `AUTHENTIK_APP_SLUG`: el cierre de sesión
       usa `…/application/o/<slug>/end-session/`.
 - [ ] Scopes `openid`, `email` y `profile`, y que el token traiga el claim

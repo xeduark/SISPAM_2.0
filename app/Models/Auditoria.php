@@ -62,6 +62,13 @@ class Auditoria extends Model
     /** Una cuenta compartida llevaba demasiado tiempo sin uso y se cerró sola. */
     public const ACCION_CERRO_POR_INACTIVIDAD = 'cerro_por_inactividad';
 
+    /**
+     * SISPAM tocó la cuenta de alguien en Authentik: se la creó, le cambió los
+     * roles o el usuario, o le cambió la contraseña (nunca se registra cuál).
+     * Ver `App\Services\Authentik\AprovisionarEnAuthentik`.
+     */
+    public const ACCION_CUENTA_AUTHENTIK = 'cuenta_authentik';
+
     /** Etiquetas en español para mostrar la acción en pantalla. */
     public const ACCIONES = [
         self::ACCION_INGRESO => 'Ingresó',
@@ -79,6 +86,7 @@ class Auditoria extends Model
         self::ACCION_CERRO_DIA => 'Cerró el día',
         self::ACCION_SE_IDENTIFICO => 'Se identificó',
         self::ACCION_CERRO_POR_INACTIVIDAD => 'Sesión cerrada por inactividad',
+        self::ACCION_CUENTA_AUTHENTIK => 'Cuenta en Authentik',
     ];
 
     /** Color del badge por acción, dentro de la paleta institucional. */
@@ -98,6 +106,7 @@ class Auditoria extends Model
         self::ACCION_CERRO_DIA => 'warning',
         self::ACCION_SE_IDENTIFICO => 'info',
         self::ACCION_CERRO_POR_INACTIVIDAD => 'gray',
+        self::ACCION_CUENTA_AUTHENTIK => 'warning',
     ];
 
     /** Se escribe una vez y queda; por eso no hay `updated_at`. */

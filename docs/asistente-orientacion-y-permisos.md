@@ -136,6 +136,50 @@ visita. Detalle en `docs/tickets.md`.
 - **El nombre del rol en SISPAM debe ser igual al del grupo.** Al guardar un
   rol, SISPAM lo convierte a mayúsculas, así que conviene nombrar los grupos
   de Authentik en mayúsculas (por ejemplo, `ORIENTADOR`).
+- **Un administrador también los asigna desde SISPAM**, en el formulario de
+  Usuarios: al guardar, SISPAM se los pone como grupos en Authentik (ver la
+  sección siguiente).
+
+### Cuentas en Authentik desde Usuarios
+
+Crear a alguien en **Administración → Usuarios** le crea también la cuenta en
+Authentik, para que pueda entrar sin que nadie más tenga que tocar Authentik
+(`App\Services\Authentik\AprovisionarEnAuthentik`, con `AUTHENTIK_API_TOKEN`).
+
+- **El username es el documento**, y los **roles** que se eligen en el
+  formulario son sus grupos allá. Solo se tocan los grupos que son roles de
+  SISPAM: los de otras aplicaciones del mismo Authentik quedan como estaban.
+  Si el grupo de un rol no existe, se crea. **Nunca se asigna un grupo de
+  superusuario de Authentik**, aunque se llame como un rol.
+- **La contraseña la escribe quien lo crea**, en el formulario (mínimo 8
+  caracteres). SISPAM se la pasa a Authentik y no la guarda, no la muestra en
+  ningún aviso y no la registra (`clave_authentik` no es una columna de
+  `users`). Para cambiarla después: acción **Cambiar contraseña**, en la
+  lista y en la edición; solo para cuentas que creó SISPAM (atributo
+  `creado_desde: SISPAM` en Authentik).
+- **Si ya tenía cuenta** (la usa en otra aplicación), se usa esa: no se
+  duplica, y los roles elegidos **se suman** a los que ya tenía allá (al crear
+  nadie le quita roles que no está viendo). Si esa cuenta la creó SISPAM, se
+  le pone la contraseña escrita; si no, **conserva la suya**, que puede usar en
+  otras aplicaciones, y el aviso lo dice.
+- **Si Authentik no responde o no acepta**, no se guarda nada en SISPAM y el
+  aviso dice por qué.
+- **Editar** solo va a Authentik si cambiaron los roles o el documento. Si
+  cambiaron los roles, allá quedan **exactamente** los de SISPAM elegidos. Si
+  solo cambió el documento, se renombra su cuenta (en vez de crear otra) y sus
+  grupos no se tocan. Un rol que le den directamente en Authentik se ve en
+  SISPAM cuando vuelva a entrar. Si al editar se le crea la cuenta (no tenía),
+  queda sin contraseña y el aviso pide ponérsela con «Cambiar contraseña».
+- **Desactivar o eliminar en SISPAM no toca Authentik.** El ingreso ya lo
+  niega SISPAM, y la cuenta puede servirle en otras aplicaciones. Bloquear a
+  alguien tampoco depende de que Authentik responda.
+- **Solo un administrador** asigna roles y cambia contraseñas: un rol da
+  permisos, así que quien tenga el módulo Usuarios podría darse los que
+  quisiera.
+- Todo queda en la auditoría como «Cuenta en Authentik», sin la contraseña.
+- Sin `AUTHENTIK_API_TOKEN`, el usuario se guarda solo en SISPAM y se avisa.
+- La cuenta de servicio y el token se crean como dice `docs/despliegue.md`
+  (sección 10, Authentik).
 
 ### Matriz
 
@@ -218,11 +262,15 @@ Reglas:
 | Sede | Sede Principal |
 | Administrador | No |
 
-Pasos en Authentik:
+Pasos, con `AUTHENTIK_API_TOKEN` configurado:
 
-1. Crea el usuario con username `OrientadorPrueba` y asígnale una contraseña.
-2. Crea el grupo `ORIENTADOR`, si no existe, y agrega el usuario.
-3. Inicia sesión en `/admin` en una ventana privada.
+1. En **Administración → Usuarios**, créalo con el documento
+   `OrientadorPrueba`, una contraseña y el rol `ORIENTADOR`.
+2. Inicia sesión en `/admin` en una ventana privada con ese documento y esa
+   contraseña.
+
+Sin token, en Authentik: crea el usuario `OrientadorPrueba` con su
+contraseña, crea el grupo `ORIENTADOR` si no existe y agrega el usuario.
 
 Lo esperado:
 

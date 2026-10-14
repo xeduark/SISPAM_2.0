@@ -29,6 +29,7 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="INVENTARIO_API_URL" value=""/>
+        <env name="AUTHENTIK_API_TOKEN" value=""/>
         <env name="TRANSCRIPCION_MOTOR" value="vision"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

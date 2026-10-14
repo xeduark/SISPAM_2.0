@@ -21,6 +21,9 @@ return [
         'redirect' => env('AUTHENTIK_REDIRECT_URI'),
         // Slug de la aplicación en Authentik, usado para cerrar la sesión allá (end-session)
         'app_slug' => env('AUTHENTIK_APP_SLUG'),
+        // Token de la API (cuenta de servicio) para crear en Authentik a quien se
+        // registra en Usuarios. Ver App\Services\Authentik\AprovisionarEnAuthentik.
+        'api_token' => env('AUTHENTIK_API_TOKEN'),
     ],
 
     'postmark' => [
