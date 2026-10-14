@@ -82,14 +82,25 @@ class User extends Authenticatable implements FilamentUser, HasName
     protected static function booted(): void
     {
         /*
-         * Una cuenta compartida nunca es administradora: no se sabe quién
-         * está detrás, y el administrador ve todo y edita la matriz. Se
-         * garantiza aquí y no solo en el formulario, para que ningún camino
-         * (un seeder, tinker, una migración) deje pasar la combinación.
+         * Una cuenta compartida nunca es administradora, y tiene siempre el
+         * rol CONSULTA y solo ese:
+         *
+         * - Administradora no, porque no se sabe quién está detrás, y el
+         *   administrador ve todo y edita la matriz.
+         * - Solo CONSULTA, venga lo que venga de Authentik: el inicio de
+         *   sesión copia sus grupos aquí, y si alguien la mete en otro grupo
+         *   allá no gana más permisos. Si no está en el grupo CONSULTA, igual
+         *   lo tiene. Lo que puede hacer se ajusta en la matriz, en ese rol.
+         *
+         * Se garantiza aquí y no solo en el formulario, para que ningún camino
+         * (el inicio de sesión, un seeder, tinker) deje pasar otra cosa.
+         * `permisos()` lo vuelve a imponer al leer, por si la fila se tocó
+         * directo en la base.
          */
         static::saving(function (User $usuario): void {
             if ($usuario->cuenta_compartida) {
                 $usuario->es_administrador = false;
+                $usuario->roles = [Rol::CONSULTA];
             }
         });
     }
@@ -143,13 +154,24 @@ class User extends Authenticatable implements FilamentUser, HasName
     }
 
     /**
+     * Los roles que cuentan para sus permisos. Una cuenta compartida tiene
+     * CONSULTA y nada más, diga lo que diga `users.roles`.
+     *
+     * @return list<string>
+     */
+    public function rolesEfectivos(): array
+    {
+        return $this->cuenta_compartida ? [Rol::CONSULTA] : array_values((array) ($this->roles ?? []));
+    }
+
+    /**
      * Los permisos de todos sus roles, sumados: ['pacientes' => ['ver', 'crear'], …].
      *
      * @return array<string, list<string>>
      */
     private function permisos(): array
     {
-        return $this->permisosResueltos ??= Rol::whereIn('nombre', $this->roles ?? [])
+        return $this->permisosResueltos ??= Rol::whereIn('nombre', $this->rolesEfectivos())
             ->pluck('permisos')
             ->reduce(fn (array $todos, ?array $permisos): array => array_merge_recursive($todos, $permisos ?? []), []);
     }

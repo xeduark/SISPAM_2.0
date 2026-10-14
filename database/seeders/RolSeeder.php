@@ -38,7 +38,7 @@ class RolSeeder extends Seeder
         // Las cuentas compartidas de cada sede (`CuentasDeConsultaSeeder`):
         // consultan en Savia y ven lo básico. No registran, no editan y no
         // entran a nada más. Sin `ver_completo` a propósito.
-        Rol::firstOrCreate(['nombre' => 'CONSULTA'], [
+        Rol::firstOrCreate(['nombre' => Rol::CONSULTA], [
             'permisos' => [
                 'consultar_paciente' => ['ver'],
             ],

@@ -72,8 +72,8 @@ class AuditoriaResource extends Resource
                     ->label('Fecha y hora')
                     ->dateTime('d/m/Y H:i:s')
                     ->sortable(),
-                // Con una cuenta compartida, debajo de la cuenta va la persona
-                // que dijo estar usándola: es lo que dice quién fue de verdad.
+                // Debajo de la cuenta, si es compartida, se dice. Las líneas de
+                // hasta la v1.0.0 traen además la persona que dijo estar usándola.
                 Tables\Columns\TextColumn::make('usuario_nombre')
                     ->label('Usuario')
                     ->description(fn (Auditoria $record): HtmlString|string|null => static::quienFue($record))
@@ -189,6 +189,7 @@ class AuditoriaResource extends Resource
                     ])
                     ->columns(3),
 
+                // Solo en líneas de hasta la v1.0.0, cuando se pedía.
                 Infolists\Components\Section::make('Persona que usaba la cuenta')
                     ->description('La cuenta es compartida: estos son el nombre y el documento que escribió quien la estaba usando.')
                     ->schema([
@@ -217,7 +218,8 @@ class AuditoriaResource extends Resource
 
     /**
      * Lo que va debajo del nombre en la columna Usuario: el documento de la
-     * cuenta y, si es compartida, la persona que la estaba usando.
+     * cuenta, si es compartida y, en las líneas de hasta la v1.0.0, la persona
+     * que dijo estar usándola.
      */
     public static function quienFue(Auditoria $record): HtmlString|string|null
     {

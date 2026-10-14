@@ -49,6 +49,20 @@ class ConfiguracionDeProduccionTest extends TestCase
         $this->assertSame('database', $env['CACHE_STORE'], 'El token de Savia necesita una caché con candados.');
     }
 
+    public function test_el_ejemplo_apunta_a_savia_de_produccion_y_no_a_pruebas(): void
+    {
+        $env = $this->envDeProduccion();
+
+        foreach (['SAVIA_ENDPOINT', 'SAVIA_ENDPOINT_TOKEN'] as $clave) {
+            $this->assertArrayHasKey($clave, $env, "{$clave} no puede quedar comentada: sin ella se usaría el ambiente de pruebas.");
+            $this->assertStringStartsWith('https://intersavia.saviasaludeps.com/', $env[$clave]);
+            $this->assertStringNotContainsString('pruebas', $env[$clave]);
+        }
+
+        $this->assertStringEndsWith('/rest/afiliado/consultar-afiliado', $env['SAVIA_ENDPOINT']);
+        $this->assertStringEndsWith('/rest/token/generacion', $env['SAVIA_ENDPOINT_TOKEN']);
+    }
+
     public function test_los_modulos_encendidos_existen(): void
     {
         $modulos = explode(',', $this->envDeProduccion()['SISPAM_MODULOS']);

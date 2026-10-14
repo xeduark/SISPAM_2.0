@@ -4,7 +4,6 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\Login;
 use App\Http\Middleware\CerrarCuentaCompartidaInactiva;
-use App\Http\Middleware\ExigirQuienUsaLaCuenta;
 use Filament\Enums\ThemeMode;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
@@ -120,9 +119,10 @@ class AdminPanelProvider extends PanelProvider
                     ->visible(fn (): bool => (bool) auth()->user()?->puede('turnos.ver')),
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
+            // Sin el recuadro de Filament (versión, documentación, GitHub):
+            // no le sirve a nadie que use SISPAM.
             ->widgets([
                 Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -138,12 +138,11 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
-            // Solo actúan sobre cuentas compartidas. Persistentes para que
-            // también corran en las peticiones de Livewire: consultar es una
-            // de ellas, y cuenta como uso y exige saber quién consulta.
+            // Solo actúa sobre cuentas compartidas. Persistente para que
+            // también corra en las peticiones de Livewire: consultar es una
+            // de ellas, y cuenta como uso.
             ->authMiddleware([
                 CerrarCuentaCompartidaInactiva::class,
-                ExigirQuienUsaLaCuenta::class,
             ], isPersistent: true);
     }
 }

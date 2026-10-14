@@ -3,12 +3,10 @@
 namespace Tests\Feature\CuentasCompartidas;
 
 use App\Filament\Pages\ConsultarPaciente;
-use App\Filament\Pages\Identificarse;
 use App\Models\Paciente;
 use App\Models\Rol;
 use App\Models\Sede;
 use App\Models\User;
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Seeders\CuentasDeConsultaSeeder;
 use Database\Seeders\RolSeeder;
 use Database\Seeders\SedeSeeder;
@@ -52,7 +50,6 @@ class RolConsultaTest extends TestCase
     private function entrarComoConsulta(): void
     {
         $this->actingAs($this->cuenta);
-        session([QuienUsaLaCuenta::SESION => ['nombre' => 'Ana Pérez', 'documento' => '43123456']]);
     }
 
     private function entrarComo(string $rol): User
@@ -118,7 +115,11 @@ class RolConsultaTest extends TestCase
     {
         $this->entrarComo('ORIENTADOR');
 
-        $this->get('/admin')->assertOk();
+        // Sin el recuadro de Filament (versión, documentación, GitHub).
+        $this->get('/admin')
+            ->assertOk()
+            ->assertDontSee('filamentphp.com/docs', escape: false)
+            ->assertDontSee('github.com/filamentphp', escape: false);
     }
 
     /**
@@ -133,7 +134,6 @@ class RolConsultaTest extends TestCase
         // Las que sí puede abrir.
         $rutas = $this->rutasDelPanel(menos: [
             ConsultarPaciente::getRouteName(),
-            Identificarse::getRouteName(),
             'filament.admin.pages.dashboard', // redirige a Consultar paciente
         ]);
 

@@ -17,6 +17,12 @@ class Rol extends Model
 
     public const ETIQUETA_AUDITORIA = 'rol';
 
+    /**
+     * El rol de las cuentas compartidas de las sedes. Lo tienen siempre, y
+     * solo ese (`User::booted()`); lo crea `RolSeeder`.
+     */
+    public const CONSULTA = 'CONSULTA';
+
     protected $table = 'roles';
 
     /**

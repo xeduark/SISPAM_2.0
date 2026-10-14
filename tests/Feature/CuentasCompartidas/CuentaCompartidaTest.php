@@ -3,33 +3,35 @@
 namespace Tests\Feature\CuentasCompartidas;
 
 use App\Filament\Pages\ConsultarPaciente;
-use App\Filament\Pages\Identificarse;
 use App\Filament\Resources\AuditoriaResource\Pages\ListAuditorias;
 use App\Http\Middleware\CerrarCuentaCompartidaInactiva;
 use App\Livewire\SelectorDeSede;
 use App\Models\Auditoria;
+use App\Models\Rol;
 use App\Models\Sede;
 use App\Models\User;
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Seeders\RolSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Laravel\Socialite\Facades\Socialite;
 use Livewire\Livewire;
 use Mockery;
 use SocialiteProviders\Authentik\Provider as AuthentikProvider;
 use SocialiteProviders\Manager\OAuth2\User as SocialiteUser;
+use Tests\Concerns\RecorreElPanel;
 use Tests\TestCase;
 
 /**
- * Una cuenta que usan varias personas de la sede: antes de consultar, la
- * persona dice quién es; cada consulta queda con la cuenta, la sede y esa
- * persona; la cuenta queda fija en su sede y se cierra sola si nadie la usa.
+ * Una cuenta que usan varias personas de la sede: entra, consulta y nada más.
+ *
+ * Siempre tiene el rol CONSULTA y solo ese, venga lo que venga de Authentik;
+ * cada consulta queda con la cuenta y la sede; queda fija en su sede y se
+ * cierra sola si nadie la usa. Desde la v1.0.1 ya no pide nombre ni documento.
  */
 class CuentaCompartidaTest extends TestCase
 {
-    use FingeSavia, RefreshDatabase;
+    use FingeSavia, RecorreElPanel, RefreshDatabase;
 
     private Sede $sede;
 
@@ -56,155 +58,134 @@ class CuentaCompartidaTest extends TestCase
             'nombre' => 'Consulta',
             'apellido' => 'PREMIUM PLAZA',
             'sede_id' => $this->sede->id,
-            'roles' => ['CONSULTA'],
             'cuenta_compartida' => true,
         ]);
         $this->cuenta->sedes()->sync([$this->sede->id]);
     }
 
-    private function identificarse(string $nombre = 'Ana Pérez', string $documento = '43123456'): void
-    {
-        Livewire::test(Identificarse::class)
-            ->fillForm(['nombre' => $nombre, 'documento' => $documento])
-            ->call('continuar')
-            ->assertHasNoFormErrors();
-    }
-
     /* ------------------------------------------------------------------ *
-     *  Antes de consultar, quién es
+     *  Entrar y consultar, nada más
      * ------------------------------------------------------------------ */
 
-    public function test_sin_decir_quien_es_cualquier_pantalla_lleva_a_identificarse(): void
+    public function test_al_iniciar_sesion_llega_directo_a_consultar_paciente(): void
     {
-        $this->actingAs($this->cuenta);
+        $this->authentikDevuelve('ConsultaPRP', ['CONSULTA']);
 
-        $this->get(ConsultarPaciente::getUrl())->assertRedirect(Identificarse::getUrl());
-        $this->get('/admin')->assertRedirect(Identificarse::getUrl());
-        $this->get(Identificarse::getUrl())
-            ->assertOk()
-            ->assertSee('¿Quién está usando esta cuenta?')
-            ->assertSee('PREMIUM PLAZA (PRP)');
-    }
-
-    public function test_no_puede_consultar_sin_decir_quien_es_ni_llamando_al_metodo(): void
-    {
-        $this->actingAs($this->cuenta);
-
-        $this->consultar()->assertRedirect(Identificarse::getUrl());
-
-        Http::assertNothingSent();
-        $this->assertDatabaseMissing('auditorias', ['accion' => Auditoria::ACCION_CONSULTO_SAVIA]);
-    }
-
-    public function test_pide_nombre_y_documento_validos(): void
-    {
-        $this->actingAs($this->cuenta);
-
-        Livewire::test(Identificarse::class)
-            ->fillForm(['nombre' => '', 'documento' => '12.345.678'])
-            ->call('continuar')
-            ->assertHasFormErrors(['nombre' => 'required', 'documento' => 'regex']);
-
-        $this->assertTrue(QuienUsaLaCuenta::falta());
-    }
-
-    public function test_cada_consulta_queda_con_la_cuenta_la_sede_y_la_persona(): void
-    {
-        $this->actingAs($this->cuenta);
-        $this->identificarse();
+        $this->get(route('auth.authentik.callback'))->assertRedirect(ConsultarPaciente::getUrl());
+        $this->assertAuthenticatedAs($this->cuenta);
 
         $this->get(ConsultarPaciente::getUrl())
             ->assertOk()
-            ->assertSee('Las consultas quedan a nombre de Ana Pérez');
+            ->assertSee('Buscar afiliado')
+            ->assertDontSee('¿Quién está usando esta cuenta?');
+
+        $this->assertSame(['Consultar paciente'], $this->menuDelPanel());
+    }
+
+    public function test_aunque_antes_hubiera_abierto_otra_direccion_entra_a_consultar(): void
+    {
+        session(['url.intended' => url('/admin/auditorias')]);
+        $this->authentikDevuelve('ConsultaPRP', ['CONSULTA']);
+
+        $this->get(route('auth.authentik.callback'))->assertRedirect(ConsultarPaciente::getUrl());
+    }
+
+    public function test_ya_no_pide_nombre_ni_documento(): void
+    {
+        $this->actingAs($this->cuenta);
+
+        $this->get('/admin/identificarse')->assertNotFound();
+        $this->get('/admin')->assertRedirect(ConsultarPaciente::getUrl());
+
+        $this->consultar()->assertSee('JUAN JOSE RAMIREZ PULGARIN');
+    }
+
+    public function test_cada_consulta_queda_con_la_cuenta_y_la_sede(): void
+    {
+        $this->actingAs($this->cuenta);
 
         $this->consultar();
-
-        $this->assertDatabaseHas('auditorias', [
-            'accion' => Auditoria::ACCION_SE_IDENTIFICO,
-            'usuario_documento' => 'ConsultaPRP',
-            'persona_nombre' => 'Ana Pérez',
-            'persona_documento' => '43123456',
-        ]);
 
         $consulta = Auditoria::where('accion', Auditoria::ACCION_CONSULTO_SAVIA)->sole();
         $this->assertSame($this->cuenta->id, $consulta->usuario_id);
         $this->assertSame('ConsultaPRP', $consulta->usuario_documento);
         $this->assertSame($this->sede->id, $consulta->sede_id);
-        $this->assertSame('Ana Pérez', $consulta->persona_nombre);
-        $this->assertSame('43123456', $consulta->persona_documento);
+        $this->assertNull($consulta->persona_documento);
     }
 
-    public function test_cambiar_de_persona_vuelve_a_preguntar(): void
+    public function test_el_escritorio_no_es_para_ella_aunque_consulta_tenga_mas_permisos(): void
     {
+        // El administrador le da algo más al rol en la matriz.
+        Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => [
+            'consultar_paciente' => ['ver'],
+            'auditoria' => ['ver'],
+        ]]);
         $this->actingAs($this->cuenta);
-        $this->identificarse();
 
-        Livewire::test(ConsultarPaciente::class)
-            ->callAction('cambiarDePersona')
-            ->assertRedirect(Identificarse::getUrl());
-
-        $this->assertTrue(QuienUsaLaCuenta::falta());
-
-        $this->identificarse('Luis Gómez', '71222333');
-        $this->consultar();
-
-        $this->assertSame('Luis Gómez', Auditoria::where('accion', Auditoria::ACCION_CONSULTO_SAVIA)->sole()->persona_nombre);
-    }
-
-    public function test_al_iniciar_sesion_se_vuelve_a_preguntar(): void
-    {
-        session([QuienUsaLaCuenta::SESION => ['nombre' => 'Persona anterior', 'documento' => '11111']]);
-
-        $this->authentikDevuelve('ConsultaPRP', ['CONSULTA']);
-        $this->get(route('auth.authentik.callback'))->assertRedirect();
-
-        $this->assertAuthenticatedAs($this->cuenta);
-        $this->assertTrue(QuienUsaLaCuenta::falta());
-
-        // La línea de ingreso no sale a nombre de quien estaba antes.
-        $this->assertNull(Auditoria::where('accion', Auditoria::ACCION_INGRESO)->sole()->persona_nombre);
-    }
-
-    public function test_las_cuentas_personales_no_se_identifican(): void
-    {
-        $orientador = User::factory()->create(['roles' => ['ORIENTADOR'], 'sede_id' => $this->sede->id]);
-        $this->actingAs($orientador);
-
-        $this->get(ConsultarPaciente::getUrl())->assertOk()->assertDontSee('quedan a nombre de');
-        $this->get(Identificarse::getUrl())->assertForbidden();
-
-        $this->consultar();
-        $this->assertNull(Auditoria::where('accion', Auditoria::ACCION_CONSULTO_SAVIA)->sole()->persona_documento);
+        $this->get('/admin')->assertRedirect(ConsultarPaciente::getUrl());
+        $this->get('/admin/auditorias')->assertOk();
+        $this->assertNotContains('Escritorio', $this->menuDelPanel());
     }
 
     /* ------------------------------------------------------------------ *
-     *  Varias personas a la vez
+     *  Siempre CONSULTA, y solo CONSULTA
      * ------------------------------------------------------------------ */
 
-    public function test_dos_personas_usan_la_misma_cuenta_a_la_vez_y_cada_una_queda_con_su_nombre(): void
+    public function test_sin_el_grupo_en_authentik_igual_entra_con_consulta(): void
     {
-        // Equipo 1
-        $this->actingAs($this->cuenta);
-        $this->identificarse('Ana Pérez', '43123456');
-        $this->consultar();
-        $sesionDelEquipo1 = session()->all();
+        $this->authentikDevuelve('ConsultaPRP', []);
 
-        // Equipo 2: otra sesión, misma cuenta.
-        $this->flushSession();
-        $this->actingAs($this->cuenta);
-        $this->identificarse('Luis Gómez', '71222333');
-        $this->consultar();
+        $this->get(route('auth.authentik.callback'))->assertRedirect(ConsultarPaciente::getUrl());
 
-        // El equipo 1 sigue con su sesión y su persona.
-        $this->flushSession();
-        session($sesionDelEquipo1);
-        $this->actingAs($this->cuenta);
-        $this->consultar();
+        $this->assertSame([Rol::CONSULTA], $this->cuenta->fresh()->roles);
+        $this->get(ConsultarPaciente::getUrl())->assertOk();
+    }
 
-        $this->assertSame(
-            ['Ana Pérez', 'Luis Gómez', 'Ana Pérez'],
-            Auditoria::where('accion', Auditoria::ACCION_CONSULTO_SAVIA)->orderBy('id')->pluck('persona_nombre')->all(),
-        );
+    public function test_otro_grupo_en_authentik_no_le_da_mas_permisos(): void
+    {
+        $this->authentikDevuelve('ConsultaPRP', ['CONSULTA', 'ORIENTADOR', 'authentik Admins']);
+
+        $this->get(route('auth.authentik.callback'));
+
+        $cuenta = $this->cuenta->fresh();
+        $this->assertSame([Rol::CONSULTA], $cuenta->roles);
+        $this->assertFalse($cuenta->puede('pacientes.crear'));
+        $this->assertFalse($cuenta->puede('orientacion.usar'));
+        $this->get('/admin/pacientes')->assertForbidden();
+    }
+
+    public function test_aunque_la_fila_diga_otra_cosa_solo_cuenta_consulta(): void
+    {
+        // Alguien tocó la base a mano.
+        DB::table('users')->where('id', $this->cuenta->id)->update(['roles' => json_encode(['ORIENTADOR'])]);
+
+        $cuenta = $this->cuenta->fresh();
+
+        $this->assertSame([Rol::CONSULTA], $cuenta->rolesEfectivos());
+        $this->assertTrue($cuenta->puede('consultar_paciente.ver'));
+        $this->assertFalse($cuenta->puede('pacientes.crear'));
+    }
+
+    public function test_lo_que_puede_hacer_se_ajusta_en_la_matriz(): void
+    {
+        $this->actingAs($this->cuenta);
+        $this->consultar()->assertDontSee('PROGRAMA VIH');
+
+        Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => [
+            'consultar_paciente' => ['ver', 'ver_completo'],
+        ]]);
+        $this->actingAs($this->cuenta->fresh());
+
+        $this->consultar()->assertSee('PROGRAMA VIH');
+    }
+
+    public function test_marcarla_como_compartida_le_deja_solo_consulta(): void
+    {
+        $persona = User::factory()->create(['roles' => ['ORIENTADOR', 'DISPENSADOR'], 'sede_id' => $this->sede->id]);
+
+        $persona->update(['cuenta_compartida' => true]);
+
+        $this->assertSame([Rol::CONSULTA], $persona->fresh()->roles);
     }
 
     /* ------------------------------------------------------------------ *
@@ -218,7 +199,6 @@ class CuentaCompartidaTest extends TestCase
         $this->cuenta->sedes()->attach($otra->id);
 
         $this->actingAs($this->cuenta);
-        session([QuienUsaLaCuenta::SESION => ['nombre' => 'Ana Pérez', 'documento' => '43123456']]);
 
         $this->assertFalse($this->cuenta->puedeCambiarDeSede());
         $this->get(ConsultarPaciente::getUrl())->assertOk()->assertDontSee('sispam-selector-sede');
@@ -242,7 +222,6 @@ class CuentaCompartidaTest extends TestCase
     public function test_tras_30_minutos_sin_uso_se_cierra_tambien_en_authentik(): void
     {
         $this->actingAs($this->cuenta);
-        $this->identificarse();
 
         $this->get(ConsultarPaciente::getUrl())->assertOk()->assertSee('sispam-cierre-por-inactividad');
 
@@ -257,17 +236,15 @@ class CuentaCompartidaTest extends TestCase
             ->assertRedirect('https://auth.example.com/application/o/sispam/end-session/');
 
         $this->assertGuest();
-        $this->assertNull(session(QuienUsaLaCuenta::SESION));
 
         $cierre = Auditoria::where('accion', Auditoria::ACCION_CERRO_POR_INACTIVIDAD)->sole();
-        $this->assertSame('Ana Pérez', $cierre->persona_nombre);
+        $this->assertSame('ConsultaPRP', $cierre->usuario_documento);
         $this->assertDatabaseMissing('auditorias', ['accion' => Auditoria::ACCION_CERRO_SESION]);
     }
 
     public function test_a_una_peticion_de_livewire_vencida_le_responde_que_la_pagina_expiro(): void
     {
         $this->actingAs($this->cuenta);
-        $this->identificarse();
         $this->get(ConsultarPaciente::getUrl())->assertOk();
 
         $this->travel(31)->minutes();
@@ -285,7 +262,6 @@ class CuentaCompartidaTest extends TestCase
     public function test_consultar_sin_recargar_la_pagina_cuenta_como_uso(): void
     {
         $this->actingAs($this->cuenta);
-        $this->identificarse();
 
         $snapshot = $this->snapshotDe($this->get(ConsultarPaciente::getUrl())->getContent(), 'app.filament.pages.consultar-paciente');
 
@@ -301,18 +277,77 @@ class CuentaCompartidaTest extends TestCase
         $this->peticionDeLivewire($snapshot, 'limpiar')->assertStatus(419);
     }
 
-    public function test_sin_decir_quien_es_livewire_responde_403(): void
+    public function test_el_cierre_de_la_pantalla_queda_como_inactividad(): void
     {
         $this->actingAs($this->cuenta);
-        $this->identificarse();
-        $snapshot = $this->snapshotDe($this->get(ConsultarPaciente::getUrl())->getContent(), 'app.filament.pages.consultar-paciente');
 
-        QuienUsaLaCuenta::olvidar();
+        $this->post(filament()->getLogoutUrl(), ['motivo' => CerrarCuentaCompartidaInactiva::MOTIVO])
+            ->assertRedirect('https://auth.example.com/application/o/sispam/end-session/');
 
-        $this->peticionDeLivewire($snapshot, 'limpiar')
-            ->assertForbidden()
-            ->assertJson(['message' => 'Antes de continuar, di quién está usando la cuenta.']);
+        $this->assertGuest();
+        $this->assertSame(1, Auditoria::where('accion', Auditoria::ACCION_CERRO_POR_INACTIVIDAD)->count());
     }
+
+    public function test_las_cuentas_personales_no_se_cierran_a_los_30_minutos(): void
+    {
+        $orientador = User::factory()->create(['roles' => ['ORIENTADOR'], 'sede_id' => $this->sede->id]);
+        $this->actingAs($orientador);
+
+        $this->get(ConsultarPaciente::getUrl())->assertOk()->assertDontSee('sispam-cierre-por-inactividad');
+
+        $this->travel(90)->minutes();
+        $this->get(ConsultarPaciente::getUrl())->assertOk();
+        $this->assertAuthenticatedAs($orientador);
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Administración → Auditoría
+     * ------------------------------------------------------------------ */
+
+    public function test_la_auditoria_marca_la_cuenta_compartida(): void
+    {
+        $this->actingAs($this->cuenta);
+        $this->consultar();
+        $otro = Auditoria::factory()->create(['accion' => Auditoria::ACCION_CONSULTO_SAVIA]);
+
+        $this->actingAs(User::factory()->administrador()->create());
+
+        Livewire::test(ListAuditorias::class)
+            ->assertSee('ConsultaPRP · cuenta compartida')
+            ->filterTable('cuenta_compartida')
+            ->assertCanSeeTableRecords(Auditoria::where('usuario_id', $this->cuenta->id)->get())
+            ->assertCanNotSeeTableRecords([$otro]);
+    }
+
+    public function test_las_auditorias_viejas_con_persona_se_siguen_viendo(): void
+    {
+        // Lo que dejó la v1.0.0, cuando se pedía nombre y documento.
+        $vieja = Auditoria::factory()->create([
+            'usuario_id' => $this->cuenta->id,
+            'usuario_nombre' => 'Consulta PREMIUM PLAZA',
+            'usuario_documento' => 'ConsultaPRP',
+            'persona_nombre' => 'Ana Pérez',
+            'persona_documento' => '43123456',
+            'accion' => Auditoria::ACCION_SE_IDENTIFICO,
+        ]);
+
+        $this->actingAs(User::factory()->administrador()->create());
+
+        Livewire::test(ListAuditorias::class)
+            ->assertSee('Persona: Ana Pérez · 43123456')
+            ->assertSee('Se identificó')
+            ->searchTable('43123456')
+            ->assertCanSeeTableRecords([$vieja]);
+
+        $this->get("/admin/auditorias/{$vieja->id}")
+            ->assertOk()
+            ->assertSee('Persona que usaba la cuenta')
+            ->assertSee('Ana Pérez');
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Ayudas
+     * ------------------------------------------------------------------ */
 
     private function snapshotDe(string $html, string $componente): string
     {
@@ -338,55 +373,6 @@ class CuentaCompartidaTest extends TestCase
                 'calls' => [['path' => '', 'method' => $metodo, 'params' => []]],
             ]],
         ]);
-    }
-
-    public function test_el_cierre_de_la_pantalla_queda_como_inactividad(): void
-    {
-        $this->actingAs($this->cuenta);
-        $this->identificarse();
-
-        $this->post(filament()->getLogoutUrl(), ['motivo' => CerrarCuentaCompartidaInactiva::MOTIVO])
-            ->assertRedirect('https://auth.example.com/application/o/sispam/end-session/');
-
-        $this->assertGuest();
-        $this->assertSame(1, Auditoria::where('accion', Auditoria::ACCION_CERRO_POR_INACTIVIDAD)->count());
-    }
-
-    public function test_las_cuentas_personales_no_se_cierran_a_los_30_minutos(): void
-    {
-        $orientador = User::factory()->create(['roles' => ['ORIENTADOR'], 'sede_id' => $this->sede->id]);
-        $this->actingAs($orientador);
-
-        $this->get(ConsultarPaciente::getUrl())->assertOk()->assertDontSee('sispam-cierre-por-inactividad');
-
-        $this->travel(90)->minutes();
-        $this->get(ConsultarPaciente::getUrl())->assertOk();
-        $this->assertAuthenticatedAs($orientador);
-    }
-
-    /* ------------------------------------------------------------------ *
-     *  Administración → Auditoría
-     * ------------------------------------------------------------------ */
-
-    public function test_la_auditoria_muestra_la_persona_bajo_la_cuenta(): void
-    {
-        $this->actingAs($this->cuenta);
-        $this->identificarse();
-        $this->consultar();
-
-        $otro = Auditoria::factory()->create(['accion' => Auditoria::ACCION_CONSULTO_SAVIA]);
-
-        $this->actingAs(User::factory()->administrador()->create());
-
-        Livewire::test(ListAuditorias::class)
-            ->assertSee('ConsultaPRP · cuenta compartida')
-            ->assertSee('Persona: Ana Pérez · 43123456')
-            ->searchTable('43123456')
-            ->assertCanNotSeeTableRecords([$otro])
-            ->searchTable(null)
-            ->filterTable('cuenta_compartida')
-            ->assertCanSeeTableRecords(Auditoria::where('usuario_id', $this->cuenta->id)->get())
-            ->assertCanNotSeeTableRecords([$otro]);
     }
 
     /**

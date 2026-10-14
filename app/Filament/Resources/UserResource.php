@@ -13,6 +13,7 @@ use Filament\Actions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -112,14 +113,16 @@ class UserResource extends Resource
                     ->disabled(fn (Get $get): bool => (bool) $get('cuenta_compartida'))
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 /*
-                 * La usan varias personas de una sede (las de consulta). Quitar la
-                 * marca dejaría de pedir quién la usa, así que, como el
-                 * interruptor de administrador, solo lo ve un administrador.
+                 * La usan varias personas de una sede (las de consulta). Decide
+                 * su rol y su sede, así que, como el interruptor de
+                 * administrador, solo lo ve un administrador.
                  */
                 Forms\Components\Toggle::make('cuenta_compartida')
                     ->label('Cuenta compartida')
-                    ->helperText('La usan varias personas de la sede. Pide nombre y documento de quien la usa, queda fija en su sede y se cierra sola tras un rato sin uso.')
+                    ->helperText('La usan varias personas de la sede. Siempre tiene el rol CONSULTA y solo ese, queda fija en su sede, no puede ser administradora y se cierra sola tras 30 minutos sin uso.')
                     ->live()
+                    // Se ve de una vez en el campo Roles; al guardar, el modelo lo impone.
+                    ->afterStateUpdated(fn (bool $state, Set $set) => $state ? $set('roles', [Rol::CONSULTA]) : null)
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 /*
                  * Los roles son sus grupos en Authentik: al guardar, SISPAM se
@@ -130,7 +133,11 @@ class UserResource extends Resource
                  */
                 Forms\Components\Select::make('roles')
                     ->label('Roles')
-                    ->helperText('Son sus grupos en Authentik: al guardar, SISPAM se los asigna allá. Los grupos de otras aplicaciones no se tocan.')
+                    ->helperText(fn (Get $get): string => $get('cuenta_compartida')
+                        ? 'Una cuenta compartida siempre tiene el rol CONSULTA, y solo ese. Lo que puede hacer se ajusta en Roles y permisos. Al guardar, SISPAM le asigna ese grupo en Authentik.'
+                        : 'Son sus grupos en Authentik: al guardar, SISPAM se los asigna allá. Los grupos de otras aplicaciones no se tocan.')
+                    // Fijo en CONSULTA: no se manda, y `User::booted()` lo pone al guardar.
+                    ->disabled(fn (Get $get): bool => (bool) $get('cuenta_compartida'))
                     ->multiple()
                     ->options(fn (): array => Rol::query()->orderBy('nombre')->pluck('nombre', 'nombre')->all())
                     // En `roles` también quedan grupos de otras aplicaciones, copiados

@@ -4,10 +4,8 @@ namespace App\Filament\Pages;
 
 use App\Models\Auditoria;
 use App\Models\Paciente;
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use App\Services\Savia\RespuestaConsulta;
 use App\Services\Savia\SaviaClient;
-use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -108,35 +106,6 @@ class ConsultarPaciente extends Page implements HasForms
         $this->form->fill(['tipo_documento' => 'CC']);
     }
 
-    /**
-     * Con una cuenta compartida, a nombre de quién quedan las consultas. Se
-     * le muestra a la misma persona para que, si el equipo lo dejó abierto
-     * otra, no consulte a nombre ajeno sin darse cuenta.
-     */
-    public function getSubheading(): ?string
-    {
-        $persona = QuienUsaLaCuenta::persona();
-
-        return $persona === null ? null : "Las consultas quedan a nombre de {$persona['nombre']}.";
-    }
-
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('cambiarDePersona')
-                ->label('Cambiar de persona')
-                ->icon('heroicon-m-arrows-right-left')
-                ->color('gray')
-                ->outlined()
-                ->visible(fn (): bool => QuienUsaLaCuenta::persona() !== null)
-                ->action(function (): void {
-                    QuienUsaLaCuenta::olvidar();
-
-                    $this->redirect(Identificarse::getUrl());
-                }),
-        ];
-    }
-
     public function form(Form $form): Form
     {
         return $form
@@ -170,16 +139,6 @@ class ConsultarPaciente extends Page implements HasForms
      */
     public function buscar(): void
     {
-        // Una cuenta compartida no consulta sin decir antes quién es: es lo
-        // único que deja saber, después, cuál de las personas de la sede hizo
-        // la consulta. `ExigirQuienUsaLaCuenta` ya lo pide al abrir la
-        // pantalla; esto cubre a quien llame el método directamente.
-        if (QuienUsaLaCuenta::falta()) {
-            $this->redirect(Identificarse::getUrl());
-
-            return;
-        }
-
         $datos = $this->form->getState();
 
         $this->reiniciarResultado();

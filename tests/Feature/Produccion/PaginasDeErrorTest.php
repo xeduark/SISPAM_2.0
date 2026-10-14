@@ -4,7 +4,6 @@ namespace Tests\Feature\Produccion;
 
 use App\Models\Sede;
 use App\Models\User;
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Seeders\RolSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -81,7 +80,6 @@ class PaginasDeErrorTest extends TestCase
             'cuenta_compartida' => true,
             'sede_id' => Sede::factory()->create()->id,
         ]));
-        session([QuienUsaLaCuenta::SESION => ['nombre' => 'Ana Pérez', 'documento' => '43123456']]);
 
         $this->get('/admin/pacientes')
             ->assertForbidden()
