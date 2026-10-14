@@ -4,8 +4,12 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\ControlaPermisos;
 use App\Filament\Resources\UserResource\Pages;
+use App\Models\Rol;
 use App\Models\Sede;
 use App\Models\User;
+use App\Services\Authentik\AprovisionarEnAuthentik;
+use App\Services\Authentik\ErrorDeAuthentik;
+use Filament\Actions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -47,7 +51,7 @@ class UserResource extends Resource
                     ->maxLength(100),
                 Forms\Components\TextInput::make('documento')
                     ->label('Documento de identidad')
-                    ->helperText('Debe coincidir con el nombre de usuario en Authentik.')
+                    ->helperText('Es su usuario en Authentik. Al guardar, SISPAM le crea allá la cuenta si no la tiene.')
                     ->required()
                     ->alphaNum()
                     ->maxLength(20)
@@ -58,6 +62,15 @@ class UserResource extends Resource
                     ->nullable()
                     ->unique(ignoreRecord: true)
                     ->maxLength(255),
+                /*
+                 * La contraseña con la que entra en Authentik. SISPAM se la pasa
+                 * a Authentik al crearle la cuenta y no la guarda: no es una
+                 * columna de `users` (`CreateUser` la saca antes de guardar).
+                 * Para cambiarla después: acción «Cambiar contraseña».
+                 */
+                static::campoClave('clave_authentik', 'Contraseña')
+                    ->helperText('Con esta entra en Authentik. SISPAM se la pasa a Authentik y no la guarda. Si ya tenía cuenta allá que no creó SISPAM, conserva la suya.')
+                    ->visible(fn (string $operation): bool => $operation === 'create' && app(AprovisionarEnAuthentik::class)->configurado()),
                 // Con su código: «PREMIUM PLAZA (PRP)». Buscar «PRP» la encuentra.
                 Forms\Components\Select::make('sede_id')
                     ->label('Sede actual')
@@ -108,10 +121,28 @@ class UserResource extends Resource
                     ->helperText('La usan varias personas de la sede. Pide nombre y documento de quien la usa, queda fija en su sede y se cierra sola tras un rato sin uso.')
                     ->live()
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
-                Forms\Components\Placeholder::make('roles')
+                /*
+                 * Los roles son sus grupos en Authentik: al guardar, SISPAM se
+                 * los pone allá (`AprovisionarEnAuthentik`), y al iniciar sesión
+                 * se vuelven a copiar de allá. Solo los asigna un administrador,
+                 * como el interruptor de arriba: un rol da permisos, así que
+                 * quien tenga el módulo Usuarios podría darse los que quisiera.
+                 */
+                Forms\Components\Select::make('roles')
+                    ->label('Roles')
+                    ->helperText('Son sus grupos en Authentik: al guardar, SISPAM se los asigna allá. Los grupos de otras aplicaciones no se tocan.')
+                    ->multiple()
+                    ->options(fn (): array => Rol::query()->orderBy('nombre')->pluck('nombre', 'nombre')->all())
+                    // En `roles` también quedan grupos de otras aplicaciones, copiados
+                    // de Authentik al ingresar: aquí solo se ven y se guardan los de SISPAM.
+                    ->formatStateUsing(fn (?array $state): array => AprovisionarEnAuthentik::rolesDeSispam($state))
+                    ->dehydrateStateUsing(fn (?array $state): array => AprovisionarEnAuthentik::rolesDeSispam($state))
+                    ->visible(fn (): bool => (bool) auth()->user()?->es_administrador)
+                    ->columnSpanFull(),
+                Forms\Components\Placeholder::make('roles_actuales')
                     ->label('Roles (grupos en Authentik)')
                     ->content(fn (?User $record): string => implode(', ', $record?->roles ?? []) ?: 'Se toman de Authentik al iniciar sesión.')
-                    ->hiddenOn('create'),
+                    ->hidden(fn (string $operation): bool => $operation === 'create' || (bool) auth()->user()?->es_administrador),
             ]);
     }
 
@@ -164,6 +195,7 @@ class UserResource extends Resource
                     ->falseLabel('Inactivos'),
             ])
             ->actions([
+                static::accionCambiarClave(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->hidden(fn (User $record): bool => static::esUsuarioActual($record)),
@@ -189,6 +221,56 @@ class UserResource extends Resource
     public static function getRecordTitle(?Model $record): string|Htmlable|null
     {
         return $record?->nombre_completo;
+    }
+
+    /**
+     * El campo de una contraseña para Authentik: oculta (con el ojo para
+     * verla), y sin que el navegador le meta la del administrador.
+     */
+    public static function campoClave(string $nombre, string $etiqueta): Forms\Components\TextInput
+    {
+        return Forms\Components\TextInput::make($nombre)
+            ->label($etiqueta)
+            ->password()
+            ->revealable()
+            ->required()
+            ->minLength(AprovisionarEnAuthentik::CLAVE_MINIMA)
+            ->maxLength(128)
+            ->autocomplete('new-password');
+    }
+
+    /**
+     * Cambiarle la contraseña de Authentik: la escribe el administrador.
+     * Solo un administrador, y solo para cuentas que creó SISPAM
+     * (`AprovisionarEnAuthentik::cambiarClave()`); si todavía no tiene
+     * cuenta, se le crea con esa contraseña. Sirve en la lista
+     * (`Tables\Actions\Action`) y en la edición (`Actions\Action`).
+     *
+     * @param  class-string<Tables\Actions\Action|Actions\Action>  $clase
+     */
+    public static function accionCambiarClave(string $clase = Tables\Actions\Action::class): Tables\Actions\Action|Actions\Action
+    {
+        return $clase::make('cambiarClave')
+            ->label('Cambiar contraseña')
+            ->icon('heroicon-o-key')
+            ->color('gray')
+            ->visible(fn (): bool => (bool) auth()->user()?->es_administrador && app(AprovisionarEnAuthentik::class)->configurado())
+            ->modalHeading(fn (User $record): string => "Cambiar la contraseña de {$record->nombre_completo}")
+            ->modalDescription('Es la contraseña con la que entra en Authentik. Solo se puede cambiar aquí si esa cuenta la creó SISPAM; si todavía no tiene cuenta, se le crea con esta.')
+            ->form([static::campoClave('clave', 'Contraseña nueva')])
+            ->modalSubmitActionLabel('Cambiar contraseña')
+            ->action(function (User $record, array $data): void {
+                try {
+                    app(AprovisionarEnAuthentik::class)->cambiarClave($record, $data['clave'])->notificacion($record)->send();
+                } catch (ErrorDeAuthentik $e) {
+                    Notification::make()
+                        ->danger()
+                        ->persistent()
+                        ->title('No se cambió la contraseña')
+                        ->body($e->getMessage())
+                        ->send();
+                }
+            });
     }
 
     /**

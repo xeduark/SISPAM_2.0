@@ -15,6 +15,7 @@ use App\Models\Auditoria;
 use App\Models\Entrega;
 use App\Models\Soporte;
 use App\Models\Transcripcion;
+use App\Services\Authentik\ApiDeAuthentik;
 use App\Services\Domina\DominaClientMock;
 use App\Services\Inventario\CatalogoInventarioMock;
 use App\Services\Inventario\InventarioApi;
@@ -40,6 +41,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Un solo cliente por petición: así el token en caché se reutiliza.
         $this->app->singleton(SaviaClient::class, fn () => SaviaClient::desdeConfig());
+
+        // La API de Authentik con la que Usuarios le crea la cuenta a cada persona.
+        $this->app->bind(ApiDeAuthentik::class, fn () => ApiDeAuthentik::desdeConfig());
 
         // El módulo de ticket ya existe: entrega lee tickets reales. El mock
         // sigue en el proyecto como doble de prueba del módulo de entrega.

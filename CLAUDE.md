@@ -37,7 +37,18 @@ php artisan serve
   Solo entran usuarios creados antes en el recurso Usuarios y con `activo = true`; los demás se rechazan.
 - Cerrar sesión redirige al end-session de Authentik (`App\Http\Responses\LogoutResponse`).
 - Variables `.env`: `AUTHENTIK_BASE_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`,
-  `AUTHENTIK_REDIRECT_URI="${APP_URL}/auth/authentik/callback"`, `AUTHENTIK_APP_SLUG`.
+  `AUTHENTIK_REDIRECT_URI="${APP_URL}/auth/authentik/callback"`, `AUTHENTIK_APP_SLUG`,
+  `AUTHENTIK_API_TOKEN`.
+- **Crear a alguien en Usuarios le crea la cuenta en Authentik** (`App\Services\Authentik\AprovisionarEnAuthentik`,
+  API v3 con el token de una cuenta de servicio): username = documento, grupos = roles elegidos en el
+  formulario (solo los de SISPAM; nunca uno de superusuario) y la contraseña que escribe quien lo crea
+  (`clave_authentik`, mínimo 8): SISPAM se la pasa a Authentik y **no la guarda ni la muestra**. Si ya tenía
+  cuenta, se usa esa y los roles se suman; su contraseña solo se cambia si la cuenta la creó SISPAM. Si
+  Authentik falla, no se guarda nada. Editar solo va allá si cambian roles (quedan exactos) o documento (se
+  renombra la cuenta); desactivar o eliminar no toca Authentik. Roles y «Cambiar contraseña» solo para
+  administradores.
+  Pruebas: `AprovisionarEnAuthentikTest` (Authentik falso en `Tests\Concerns\FingeAuthentik`).
+  Detalle: `docs/asistente-orientacion-y-permisos.md`.
 
 ## Módulo Pacientes (Consulta Afiliados — Savia Salud EPS)
 - Los pacientes no se escriben a mano: se traen del servicio REST **Consulta Afiliados**
