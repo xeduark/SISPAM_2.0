@@ -77,8 +77,8 @@ class OrdenMedicaTest extends TestCase
     public function test_sin_el_permiso_responde_403(): void
     {
         // Puede ver pacientes, pero no las órdenes médicas.
-        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['pacientes' => ['ver']]]);
-        $this->actingAs(User::factory()->create(['roles' => ['CONSULTA']]));
+        Rol::create(['nombre' => 'LECTOR', 'permisos' => ['pacientes' => ['ver']]]);
+        $this->actingAs(User::factory()->create(['roles' => ['LECTOR']]));
 
         $this->get($this->url())->assertForbidden();
     }
@@ -149,8 +149,8 @@ class OrdenMedicaTest extends TestCase
 
     public function test_un_intento_sin_permiso_no_deja_registro_de_acceso(): void
     {
-        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['pacientes' => ['ver']]]);
-        $this->actingAs(User::factory()->create(['roles' => ['CONSULTA']]));
+        Rol::create(['nombre' => 'LECTOR', 'permisos' => ['pacientes' => ['ver']]]);
+        $this->actingAs(User::factory()->create(['roles' => ['LECTOR']]));
 
         $this->get($this->url())->assertForbidden();
 
@@ -174,8 +174,8 @@ class OrdenMedicaTest extends TestCase
 
     public function test_la_ficha_esconde_la_galeria_a_quien_no_tiene_permiso(): void
     {
-        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['pacientes' => ['ver']]]);
-        $this->actingAs(User::factory()->create(['roles' => ['CONSULTA']]));
+        Rol::create(['nombre' => 'LECTOR', 'permisos' => ['pacientes' => ['ver']]]);
+        $this->actingAs(User::factory()->create(['roles' => ['LECTOR']]));
 
         Livewire::test(ViewPaciente::class, ['record' => $this->paciente->getRouteKey()])
             ->assertSuccessful()

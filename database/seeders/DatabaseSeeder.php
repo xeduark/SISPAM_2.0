@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             ColaSeeder::class,
             AdminUserSeeder::class,
             RolSeeder::class,
+            CuentasDeConsultaSeeder::class,
         ]);
     }
 }

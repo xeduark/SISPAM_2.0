@@ -46,6 +46,8 @@ php artisan serve
   - **Consultar paciente** (`/admin/consultar-paciente`) — la puerta de entrada. Se escribe
     la cédula, se pulsa Enter y aparecen todos los datos que devuelve el servicio, si está
     activo en Savia y si ya está registrado en SISPAM. Desde ahí se registra o se actualiza.
+    Con `consultar_paciente.ver` se ve lo básico; con `ver_completo`, todo. Registrar,
+    actualizar y «Ver ficha» exigen su permiso de `pacientes` (ver «Cuentas compartidas»).
   - **Pacientes** (`/admin/pacientes`) — el registro local: listado, ficha, edición.
 - Archivos:
   - `config/savia.php` — endpoints, tipos de documento, tabla de códigos y los ~78
@@ -63,12 +65,22 @@ php artisan serve
     de estado, ficha completa y acción «Actualizar desde Savia».
 - Variables `.env`: `SAVIA_USERNAME`, `SAVIA_PASSWORD`, `SAVIA_VERIFY_SSL`, `SAVIA_AUDITAR`.
   Los opcionales (`SAVIA_ENDPOINT`, `SAVIA_ENDPOINT_TOKEN`, `SAVIA_GRANT_TYPE`,
-  `SAVIA_TIMEOUT`, `SAVIA_TOKEN_MINUTOS`) van **comentados** en `.env.example`: dejarlos
-  vacíos no toma el valor por defecto, `env()` devuelve cadena vacía y el endpoint o el
-  timeout quedarían en nada.
+  `SAVIA_TIMEOUT`, `SAVIA_CONNECT_TIMEOUT`, `SAVIA_TOKEN_MINUTOS`) van **comentados** en
+  `.env.example`: dejar vacío un endpoint no toma el valor por defecto, `env()` devuelve
+  cadena vacía y el endpoint quedaría en nada. Los tiempos sí se protegen con `?:`
+  (10 s por petición y 5 s para conectar).
 - Auditoría: cada consulta se registra en el log con usuario, tipo y número de documento,
   HTTP, código y duración. **Nunca la respuesta completa: son datos de salud.**
-  Se apaga con `SAVIA_AUDITAR=false`.
+  Se apaga con `SAVIA_AUDITAR=false` (así va en producción: la tabla `auditorias` ya lo
+  registra). Las fallas técnicas quedan como advertencia en el log de todos modos, sin el documento.
+- **Varias personas a la vez** (`SaviaClient`): el token se renueva con un candado en la
+  caché (`savia:token:renovar`), así que una sola consulta lo pide y las demás usan ese; tras
+  un 401 se compara con el de la caché antes de renovar. Tras 3 fallas de red seguidas, las
+  consultas se pausan 30 s y responden de una vez, sin ocupar un proceso de PHP.
+  `ConsultasSimultaneasTest` lo prueba con procesos de verdad y un Savia simulado.
+- **Si Savia falla, el detalle técnico solo lo ve el administrador**
+  (`RespuestaConsulta::diagnosticoPara()`); los demás ven «Savia no respondió…». «No
+  encontrado» y «documento inválido» sí se muestran tal cual (deciden el código, no el HTTP).
 
 ### Quién manda sobre cada dato
 - **Savia manda** sobre la afiliación: estado, régimen, IPS, Sisbén, programas, nombres.
@@ -112,6 +124,8 @@ listado): documento, valor anterior, valor nuevo y usuario. Nunca la respuesta c
 ### Pruebas
 ```bash
 php artisan test --filter=SaviaClientTest        # el cliente, con Http::fake()
+php artisan test --filter=SaviaBajoCargaTest     # candado del token, pausa, mensajes
+php artisan test --filter=ConsultasSimultaneasTest  # 8 procesos a la vez (tarda unos segundos)
 php artisan test --filter=ConsultarPacienteTest  # la pantalla de consulta
 php artisan test --filter=PacienteResourceTest   # el registro local
 ```
@@ -123,7 +137,62 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - Matriz por módulo en la tabla `roles` (Administración → Roles y permisos); módulos en `Rol::MODULOS`.
 - `users.es_administrador` (se marca en SISPAM) ve todo y es el único que edita la matriz.
 - Verificar: `auth()->user()->puede('modulo.accion')`; recursos usan el trait `ControlaPermisos` + `$modulo`.
+- **Un método de Livewire se revisa por dentro**: ocultar el botón no basta. Y lo que
+  decide el permiso va con `#[Locked]`, o el navegador lo cambia (`ConsultarPaciente::guardar()`).
+- `RolConsultaTest::test_cualquier_otra_pantalla_le_responde_403` recorre todas las rutas
+  del panel: una pantalla nueva sin su permiso la hace fallar.
 - Detalle: `docs/asistente-orientacion-y-permisos.md`.
+
+## Cuentas compartidas (rol CONSULTA)
+- Cuatro cuentas, una por sede, que usan varias personas a la vez para **consultar en
+  Savia y nada más**: `ConsultaPRP`, `ConsultaBIC`, `ConsultaL30`, `ConsultaAVT` (el
+  documento es el username en Authentik). Grupo/rol `CONSULTA`: solo `consultar_paciente.ver`.
+- Se crean con `php artisan db:seed --class=CuentasDeConsultaSeeder` (llama a `RolSeeder`;
+  se puede volver a correr). Se marcan con `users.cuenta_compartida`, que solo cambia un administrador.
+- **Ven lo básico** (`ConsultarPaciente::CAMPOS_BASICOS`): identificación, estado, régimen e
+  IPS primaria. El resto se quita en el servidor, porque el estado de Livewire viaja al
+  navegador. Lo completo es `consultar_paciente.ver_completo`; la migración
+  `2026_10_13_110000_ver_todo_lo_de_savia` se lo dio a todo rol que ya consultaba.
+- Solo ven «Consultar paciente»: `/admin` las lleva ahí (`App\Filament\Pages\Dashboard`,
+  `User::soloPuedeConsultar()`) y todo lo demás responde 403. Sin botones de registrar,
+  actualizar ni ver ficha.
+- **Quién consultó:** antes de trabajar, la persona escribe nombre y documento
+  (`/admin/identificarse`, middleware `ExigirQuienUsaLaCuenta`). Va en la sesión
+  (`QuienUsaLaCuenta`), una vez por sesión, y `Auditoria::registrar()` lo pone solo en
+  cada línea (`persona_nombre`, `persona_documento`). Solo para la auditoría.
+- **Fija en su sede** (sin selector, aunque le asignen otras) y **nunca administradora**.
+- **Se cierra sola a los 30 minutos sin uso**, también en Authentik: reloj en el navegador
+  y garantía en el servidor (`CerrarCuentaCompartidaInactiva`). `CUENTA_COMPARTIDA_MINUTOS_SIN_USO`.
+- Los dos middleware son `authMiddleware(..., isPersistent: true)`: corren también en
+  `/livewire/update`, porque consultar es una petición de Livewire.
+- Detalle, pasos en Authentik y cómo probarlo: `docs/asistente-orientacion-y-permisos.md` (sección 5).
+
+## Producción
+- **https://consultasavia.comitedeestudiosmedicos.com.co**, primera salida solo para las
+  cuentas de consulta y el administrador. Guía completa, checklist y prueba posterior:
+  `docs/despliegue.md`. Ejemplo de `.env` sin secretos: `.env.production.example`.
+- **Módulos apagados con `SISPAM_MODULOS`** (`config/sispam.php`): lista blanca con las
+  claves de `Rol::MODULOS`; vacía = todo encendido (local). En producción:
+  `consultar_paciente,usuarios,sedes,auditoria`. Se revisa en `User::puede()` **antes** que
+  la excepción del administrador, así que lo apagado no existe ni para él: menú, pantallas,
+  acciones y archivos responden 403. La sala pública usa el middleware `modulo:turnos`
+  (404). El cierre del día no corre con tickets apagados. La matriz de Roles sigue
+  mostrando los apagados, marcados, para que editar un rol no les borre los permisos.
+- **Todo con https aunque haya proxy** (`HttpsServiceProvider`): con `APP_URL` en https se
+  fuerza el esquema; con `TRUSTED_PROXIES` se cree el `X-Forwarded-*` del proxy.
+- **Errores en español y sin nada de adentro** con `APP_DEBUG=false`: vistas en
+  `resources/views/errors/` (plantilla institucional, texto fijo por código, nunca el
+  mensaje de la excepción) y, para Livewire, `filament/errores-de-livewire.blade.php`
+  cambia el recuadro de «Server Error» por una notificación.
+- **Nada de documentos en `public/`**: se descarga sin sesión. Los modelos de referencia
+  están en `docs/referencias/`. `ConfiguracionDeProduccionTest` falla si aparece un PDF,
+  una hoja de cálculo o un volcado. `robots.txt` no deja indexar.
+- **Base nueva:** `migrate --force` y los seeders `SedeSeeder`, `AdminUserSeeder` y
+  `CuentasDeConsultaSeeder` (incluye `RolSeeder`). Nunca `db:seed` a secas (trae
+  `ColaSeeder`) ni `DemoProcesoSeeder`, que además se niega a correr en producción.
+- Actualizar: `scripts/desplegar.sh <etiqueta>`. Copia de la base: `scripts/respaldar-base.sh`.
+- Pruebas: `tests/Feature/Produccion/`. El recorrido de todas las rutas del panel está en
+  el trait `Tests\Concerns\RecorreElPanel`.
 
 ## Auditoría
 - Rastro de quién hizo qué **en base de datos** (tabla `auditorias`), no solo en los logs.
@@ -136,6 +205,8 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - Auditar un modelo: `use Auditable;` + `CAMPOS_AUDITADOS` + `ETIQUETA_AUDITORIA`.
   Registrar algo que no es un cambio de modelo: `Auditoria::registrar(...)`.
 - Nadie crea, edita ni borra auditorías desde la pantalla, ni el administrador.
+- Con una **cuenta compartida**, cada línea lleva también a la persona que dijo usarla
+  (`persona_nombre`, `persona_documento`); en la pantalla va debajo de la cuenta.
 - **Orden médica:** `soportes/{soporte}/orden-medica` sirve el archivo desde el disco
   privado. Exige sesión y el permiso `orientacion.ver_orden`; cada acceso se audita.
   Se llega desde la sección «Órdenes médicas» de la ficha del paciente.
@@ -157,7 +228,23 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - **La sede siempre se nombra con su código**: `Sede::etiqueta` → «PREMIUM PLAZA (PRP)»,
   y `Sede::opciones()` para selectores y filtros. Armarla en un solo sitio es lo que
   garantiza que todas las pantallas y el ticket impreso digan lo mismo.
-- Un usuario pertenece a **una sola** sede (`users.sede_id`).
+- `users.sede_id` es **dónde está trabajando ahora** una persona, y es lo que
+  lee todo el sistema: tickets, turnos, entrega, transcripción e inventario.
+- **Moverse de sede**: la tabla `sede_user` dice en cuáles tiene permiso de
+  trabajar cada quien (`2026_10_09_100000_sedes_donde_puede_trabajar_cada_usuario`,
+  que al migrar le asigna a cada usuario la sede en la que ya estaba — nadie
+  pierde acceso). Con más de una aparece el **selector de la barra superior**
+  (`App\Livewire\SelectorDeSede`, render hook `TOPBAR_END`); con una sola no se
+  muestra nada y todo sigue igual que antes.
+- **Cambiar de sede escribe `users.sede_id`**, así que vale de inmediato para
+  todos los módulos sin tocar los 16 sitios que la leen —incluidos los de
+  turnos y transcripción, que son de otra persona—. Se asignan en
+  Usuarios → «Sedes donde puede trabajar»; el administrador se mueve por todas
+  sin que nadie se las asigne, porque ya ve todas en cada listado.
+- La comprobación de verdad está en `User::cambiarDeSede()`, no en el selector:
+  el id de la sede viaja en la petición. Cada cambio queda en la auditoría
+  (`Auditoria::ACCION_CAMBIO_DE_SEDE`) y **suelta la ventanilla guardada en la
+  sesión**, que era de la sede anterior.
 ## Orientación (pantalla de ingreso rápido)
 - `/admin/orientacion` — donde el orientador recibe al paciente **en una sola
   pantalla**: documento → Enter → Savia llena los datos → confirma el contacto
@@ -198,9 +285,14 @@ hace falta que la IP del equipo esté autorizada por Savia.
   **El nombre original del archivo no se guarda**: llevaría el del paciente.
 - El campo es el `FileUpload` de Filament, no JS propio: cuadrícula
   (`panelLayout('grid')`), agregar sin perder (`appendFiles`), reordenar
-  (`reorderable`), ver grande y rotar (`imageEditor`) y **reducir a 2000 px en
+  (`reorderable`), ver grande y girar y **reducir a 2000 px en
   el navegador** (`imageResize*`), que de paso endereza por EXIF y borra los
   metadatos. Arrastrar una hoja cambia su `pagina`.
+- **El editor de la foto solo gira** (`App\Filament\Forms\Components\FileUploadSoloGiro`):
+  sin recortar, zoom, mover ni voltear. El recorte además **cortaba media hoja**
+  al girar (el recuadro de Cropper no gira con la imagen); sin recuadro se
+  guarda la imagen completa. Los campos de posición y tamaño se esconden con
+  CSS (`.sispam-solo-giro`), no se quitan: el JS de Filament les escribe.
 - **Sin `openable()` a propósito**: con archivos temporales no hay URL, y con
   los guardados caería a `Storage::url()` — una URL pública a un dato de salud.
 - **HEIC no está en `acceptedFileTypes` a propósito**: pedir `image/jpeg` es lo
@@ -227,6 +319,15 @@ hace falta que la IP del equipo esté autorizada por Savia.
   enterraría el rastro de quién sí leyó la fórmula. Queda **una línea por
   entrada a la galería** (`Auditoria::ACCION_VIO_GALERIA`, desde
   `ViewPaciente::mount()`); abrir una hoja concreta se sigue auditando una por una.
+- **Lo que sigue después del ticket es transcripción.** Cada hoja entra sola a
+  su cola: el puente es `Soporte::created` en `AppServiceProvider`, que crea la
+  fila en `transcripciones` y despacha `LeerFormula` con `afterCommit()`.
+  **Orientación no llama a transcripción ni al revés**: lo único que las une es
+  que una crea soportes y la otra los escucha. Ver `docs/transcripcion.md`.
+- Un soporte que **adopta un ticket después** (la fórmula que quedó sin turno)
+  cambia con `update`, no con `create`, así que no vuelve a pasar por ese
+  enganche: un segundo listener `Soporte::updated` le pasa el ticket a su
+  transcripción. Sin él, la bandeja de transcripción muestra el turno vacío.
 - Falta: **las fórmulas en el modal de Alistar** — fuera de alcance, ese módulo
   es de otra persona. Con ello queda pendiente el segundo camino de permiso en
   `OrdenMedicaController` (`tickets.alistar` + misma sede).
@@ -351,7 +452,7 @@ hace falta que la IP del equipo esté autorizada por Savia.
   (`DOCUMENT_TEXT_DETECTION`, vía `Http::`, sin SDK), verificación de cédula, comparación
   original ↔ generada; al confirmar genera la orden de entrega separando
   ventanilla y domicilio. Cola = `database` + `queue:work`.
-  Modelo de salida: `public/img/Orden de Dispensación & Alistamiento - TK-PRD-261005-0333.pdf`.
+  Modelo de salida: `docs/referencias/Orden de Dispensación & Alistamiento - TK-PRD-261005-0333.pdf`.
 - **Regla dura:** cada medicamento pertenece a UNA fórmula (`soporte_id`). Nunca mezclar
   medicamentos de fórmulas distintas del mismo paciente.
 - `texto_ocr` es dato de salud: cast `encrypted`, nunca en logs ni `auditorias`.

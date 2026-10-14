@@ -37,7 +37,7 @@ Copia de la pantalla «Verificación» del nativo (`views/verificacion/index.php
   datos en `App\Services\Transcripcion\OrdenDeEntrega`). Botón «Orden de entrega» en la revisión
   cuando está confirmada. Permiso `transcripcion.ver` o `entrega.ver`, solo su sede (admin todas);
   cada apertura queda en `auditorias` (`imprimio_orden_entrega`). HTML con `window.print()`, sin librería PDF.
-- Corrige el ejemplo del nativo (`public/img/Orden de Dispensación…pdf`): fórmulas numeradas de corrido
+- Corrige el ejemplo del nativo (`docs/referencias/Orden de Dispensación…pdf`): fórmulas numeradas de corrido
   en el ticket y cada medicamento con la suya; posología real; sin «total de unidades»; lote y vence
   en blanco para quien alista (el ejemplo ponía «FEFO»).
 - Separa **1. ventanilla** (hay stock en la sede según la API al imprimir) de **2. pendiente / domicilio**
@@ -89,7 +89,7 @@ La orientadora sube la(s) fórmula(s) del paciente (ya pasa: tabla `soportes`, d
 2. Se **verifica la cédula** impresa contra el paciente.
 3. Pantalla lado a lado **fórmula original (imagen) ↔ lectura generada**: confirmar o corregir.
 4. Al confirmar se genera la **Orden de Dispensación & Alistamiento** (modelo:
-   `public/img/Orden de Dispensación & Alistamiento - TK-PRD-261005-0333.pdf`, logo en `turnero.md`)
+   `docs/referencias/Orden de Dispensación & Alistamiento - TK-PRD-261005-0333.pdf`, logo en `turnero.md`)
    y con ella **lo que farmacia debe despachar**.
 
 ### Lo que se corrige del formato de ejemplo
@@ -145,7 +145,7 @@ Por cada medicamento leído de la fórmula:
   real cuando exista.
 
 ## Datos que exige Savia (reporte de 85 columnas)
-`public/reportes/BD 85 COLUMNAS.xlsx` es el formato de dispensación que pide la EPS. Lo que la
+`docs/referencias/BD 85 COLUMNAS.xlsx` es el formato de dispensación que pide la EPS. Lo que la
 transcripción debe dejar capturado para poder llenarlo después:
 número y tipo de fórmula (FORMULA / MIPRES), fecha fórmula, **duración del tratamiento en días**,
 **cantidad solicitada (total del tratamiento)**, cantidad del mes, IPS formulante, médico (código,

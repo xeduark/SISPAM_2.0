@@ -184,7 +184,7 @@ hacía falta ya venía, y escribirlo a mano habrían sido unas 400 líneas de JS
 | Miniaturas en cuadrícula | `panelLayout('grid')` |
 | Agregar más sin perder las anteriores | `appendFiles()` |
 | Reordenar arrastrando | `reorderable()` |
-| Ver en grande y rotar | `imageEditor()` |
+| Ver en grande y girar (nada más) | `FileUploadSoloGiro` (ver abajo) |
 | Reducir a 2000 px **en el navegador** | `imageResizeMode('contain')` + `imageResizeTargetWidth` |
 | Cámara o galería en el mismo botón | sin `capture` |
 
@@ -195,6 +195,31 @@ devuelve las hojas ya ordenadas, para que ninguna pantalla tenga que acordarse.
 **El redimensionado pasa en el navegador**, antes de subir: una foto de celular
 de 4 MB sale en unos 400 KB. Al redibujarse en el lienzo la imagen **se
 endereza sola** según el EXIF y **pierde los metadatos**, el GPS incluido.
+
+### El editor solo gira
+
+El lápiz de cada hoja la abre grande para revisarla y enderezarla. El editor de
+Filament (Cropper.js) traía recortar, zoom, mover, voltear y campos de
+posición y tamaño: para una fórmula sobraba todo menos girar.
+
+Y el recorte no solo sobraba: **cortaba media hoja**. El recuadro de recorte
+nace del tamaño de la foto y no gira con ella, así que al girar una foto
+apaisada se guardaba solo la franja que quedaba dentro del recuadro. Se
+comprobó con Cropper 1.6.2, la versión que trae Filament: girada con el
+recuadro, una foto de 400 × 300 salía como una franja de 2000 × 1500 con media
+imagen; sin recuadro sale completa, 300 × 400.
+
+`App\Filament\Forms\Components\FileUploadSoloGiro` es el `FileUpload` de
+Filament con tres cambios:
+
+| Qué | Cómo |
+|---|---|
+| Solo los botones de girar | `getImageEditorActions()`; tras cada giro la hoja se encaja en el visor |
+| Sin recuadro, sin arrastre, sin zoom | Al evento `ready` de Cropper: `clear()`, `setDragMode('none')` y apagar `zoomable` |
+| Sin los campos de posición y tamaño | CSS `.sispam-solo-giro` en `public/css/sispam-tema.css` |
+
+Los campos **se esconden, no se quitan**: el JS de Filament les escribe en cada
+cambio y fallaría sin ellos. «Reiniciar» sigue ahí y deshace los giros.
 
 ### Por qué no hay botón de «abrir»
 
@@ -289,6 +314,53 @@ En su lugar queda **una línea por entrada a la galería** (`vio_galeria`, desde
 una en `OrdenMedicaController`. Del rastro, como siempre, solo el documento del
 paciente: ni su nombre, ni la ruta del archivo.
 
+## A dónde va la fórmula después
+
+Generar el ticket no termina el recorrido: cada hoja entra sola a la cola del
+**módulo de transcripción**, que la lee con IA y propone los medicamentos.
+
+```
+Orientación genera el ticket
+        │
+        ├── un soporte por hoja  ──►  Soporte::created  (AppServiceProvider)
+        │                                    │
+        │                                    ├── crea la fila en `transcripciones`
+        │                                    └── despacha LeerFormula (afterCommit)
+        │
+        └── el ticket, con su turno          │
+                                             ▼
+                              la transcriptora revisa y confirma
+                                             │
+                                             ▼
+                                   orden de entrega  ──►  farmacia alista
+```
+
+**Orientación no llama a transcripción.** El puente escucha el modelo
+`Soporte`, así que esta pantalla no sabe que transcripción existe y
+transcripción no sabe de esta pantalla. Lo único que las une es que una crea
+soportes y la otra los escucha. Ver `docs/transcripcion.md`.
+
+Los soportes se crean **dentro de la transacción** de `RegistrarVisita` y el
+trabajo se despacha con `afterCommit()`, así que si el registro se revierte no
+queda ninguna lectura encolada a medias.
+
+### El soporte que adopta un ticket después
+
+Cuando se completa una fórmula que había quedado sin turno, el soporte cambia
+de dueño con un `update`, no con un `create`: no vuelve a pasar por el
+enganche, y su transcripción se quedaría apuntando a ningún ticket.
+
+Por eso hay un segundo enganche, `Soporte::updated`, que le pasa el ticket a la
+transcripción cuando el soporte adopta uno. Transcripción ya era defensiva en
+los dos sitios donde más dolería —la orden de entrega y la pantalla de revisión
+caen de vuelta al ticket del soporte—, así que la fórmula llegaba igual a
+farmacia; lo que se arreglaba mal era su bandeja, que mostraba la columna del
+turno vacía y dejaba a quien revisa sin saber de qué paciente de la fila se
+trata.
+
+Se escribe en masa a propósito: `ticket_id` no está en
+`Transcripcion::CAMPOS_AUDITADOS`, y esto corrige un enlace, no registra la
+decisión de nadie.
 ## Lo que todavía no hace
 
 - **Las fórmulas no se ven en el modal de Alistar.** Quedó fuera de alcance:
@@ -331,4 +403,10 @@ Y 11 en `FormulaSinTurnoTest`: el aviso, que solo ofrezca la carga más
 reciente, la recuperación sin volver a tomar las fotos, la renumeración, la
 prioridad de la pantalla, y que si la sede sigue sin colas no se pierda nada.
 
-Ninguna toca el servicio real: `Http::fake()` responde en lugar de Savia.
+Y 5 en `PuenteConTranscripcionTest`: que cada hoja entre a la cola con su
+ticket, que tres hojas den tres lecturas del mismo ticket, que sumar a una
+visita abierta también las mande, que sin colas se lea igual, y que al
+completar el turno la transcripción quede colgada de él.
+
+Ninguna toca el servicio real: `Http::fake()` responde en lugar de Savia, y
+`Bus::fake()` en lugar de la lectura con IA.

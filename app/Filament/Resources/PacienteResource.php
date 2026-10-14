@@ -9,6 +9,7 @@ use App\Filament\Resources\PacienteResource\ResultadoConsulta;
 use App\Models\Auditoria;
 use App\Models\Paciente;
 use App\Models\Ticket;
+use App\Services\Savia\RespuestaConsulta;
 use App\Services\Savia\SaviaClient;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -809,9 +810,13 @@ class PacienteResource extends Resource
         $existente = static::pacienteRegistrado($tipoDocumento, $numeroDocumento);
 
         if (! $cliente->configurado()) {
+            $diagnostico = auth()->user()?->es_administrador
+                ? ['titulo' => 'La consulta a Savia no está configurada', 'detalle' => 'Faltan las credenciales SAVIA_USERNAME y SAVIA_PASSWORD en el .env.']
+                : RespuestaConsulta::diagnosticoSinDetalle();
+
             Notification::make()
-                ->title('La consulta a Savia no está configurada')
-                ->body('Faltan las credenciales SAVIA_USERNAME y SAVIA_PASSWORD. Comunícate con un administrador.')
+                ->title($diagnostico['titulo'])
+                ->body($diagnostico['detalle'])
                 ->danger()
                 ->persistent()
                 ->send();
@@ -838,7 +843,8 @@ class PacienteResource extends Resource
         );
 
         if (! $respuesta->exitosa() || $afiliado === null) {
-            $diagnostico = $respuesta->diagnostico();
+            // El detalle técnico de una falla solo lo ve el administrador.
+            $diagnostico = $respuesta->diagnosticoPara(auth()->user());
 
             // El servicio marca «no encontrado» con el código -1000; también cuenta
             // una respuesta exitosa que no trajo ningún afiliado.

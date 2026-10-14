@@ -53,10 +53,17 @@ class RolResource extends Resource
                     // Los grupos se comparan tal cual: se evita el error de mayúsculas.
                     ->dehydrateStateUsing(fn (string $state): string => mb_strtoupper(trim($state))),
 
+                /*
+                 * Los módulos apagados en esta instalación (`SISPAM_MODULOS`)
+                 * siguen aquí, marcados. Si se escondieran, guardar el rol
+                 * les borraría los permisos, y al encenderlos habría que
+                 * volver a marcarlos.
+                 */
                 Forms\Components\Section::make('Permisos por módulo')
                     ->schema(collect(Rol::MODULOS)
                         ->map(fn (array $modulo, string $clave): Forms\Components\CheckboxList => Forms\Components\CheckboxList::make("permisos.{$clave}")
-                            ->label($modulo['nombre'])
+                            ->label($modulo['nombre'].(Rol::moduloEncendido($clave) ? '' : ' — apagado en esta instalación'))
+                            ->helperText(Rol::moduloEncendido($clave) ? null : 'Nadie lo ve mientras esté apagado, ni el administrador. Lo marcado aquí vale cuando se encienda.')
                             ->options($modulo['acciones'])
                             ->columns(4)
                             ->gridDirection('row')
@@ -78,7 +85,9 @@ class RolResource extends Resource
                 // Una columna por módulo: la tabla misma es la matriz.
                 ...collect(Rol::MODULOS)
                     ->map(fn (array $modulo, string $clave): Tables\Columns\TextColumn => Tables\Columns\TextColumn::make("modulo_{$clave}")
-                        ->label($modulo['nombre'])
+                        ->label($modulo['nombre'].(Rol::moduloEncendido($clave) ? '' : ' (apagado)'))
+                        // Los apagados se pueden mostrar, pero no estorban de entrada.
+                        ->toggleable(isToggledHiddenByDefault: ! Rol::moduloEncendido($clave))
                         ->state(fn (Rol $record): array => array_values(array_intersect_key(
                             $modulo['acciones'],
                             array_flip($record->permisos[$clave] ?? []),

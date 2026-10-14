@@ -8,6 +8,7 @@ use App\Models\Sede;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -59,12 +60,32 @@ class UserResource extends Resource
                     ->maxLength(255),
                 // Con su código: «PREMIUM PLAZA (PRP)». Buscar «PRP» la encuentra.
                 Forms\Components\Select::make('sede_id')
-                    ->label('Sede')
+                    ->label('Sede actual')
+                    ->helperText('Dónde está trabajando ahora. Si tiene varias asignadas, puede moverse desde la barra superior.')
                     ->options(fn (): array => Sede::opciones())
                     ->getOptionLabelUsing(fn ($value): ?string => Sede::find($value)?->etiqueta)
                     ->required()
                     ->searchable()
                     ->preload(),
+                /*
+                 * En cuáles puede trabajar. Con una sola, el selector de la
+                 * barra ni se muestra y la persona trabaja como siempre.
+                 *
+                 * Es lo que decide a qué datos de salud llega: cada sede ve
+                 * sus pacientes, sus tickets y sus fórmulas, así que agregar
+                 * una aquí es ampliar el acceso de alguien.
+                 */
+                Forms\Components\Select::make('sedes')
+                    ->label('Sedes donde puede trabajar')
+                    ->helperText('Agregar una amplía lo que esta persona puede ver y atender. Los administradores se mueven por todas sin necesidad de esto.')
+                    ->relationship('sedes', 'nombre')
+                    ->getOptionLabelFromRecordUsing(fn (Sede $record): string => $record->etiqueta)
+                    ->multiple()
+                    ->preload()
+                    ->searchable()
+                    // Una cuenta compartida queda fija en su sede.
+                    ->hidden(fn (?User $record, Get $get): bool => (bool) $record?->es_administrador || (bool) $get('cuenta_compartida'))
+                    ->columnSpanFull(),
                 Forms\Components\Toggle::make('activo')
                     ->label('Usuario activo')
                     ->default(true),
@@ -72,7 +93,20 @@ class UserResource extends Resource
                 // módulo Usuarios podría darse todos los permisos.
                 Forms\Components\Toggle::make('es_administrador')
                     ->label('Administrador')
-                    ->helperText('Ve todos los módulos y administra la matriz de permisos.')
+                    ->helperText(fn (Get $get): string => $get('cuenta_compartida')
+                        ? 'Una cuenta compartida no puede ser administradora: no se sabe quién está detrás.'
+                        : 'Ve todos los módulos y administra la matriz de permisos.')
+                    ->disabled(fn (Get $get): bool => (bool) $get('cuenta_compartida'))
+                    ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
+                /*
+                 * La usan varias personas de una sede (las de consulta). Quitar la
+                 * marca dejaría de pedir quién la usa, así que, como el
+                 * interruptor de administrador, solo lo ve un administrador.
+                 */
+                Forms\Components\Toggle::make('cuenta_compartida')
+                    ->label('Cuenta compartida')
+                    ->helperText('La usan varias personas de la sede. Pide nombre y documento de quien la usa, queda fija en su sede y se cierra sola tras un rato sin uso.')
+                    ->live()
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 Forms\Components\Placeholder::make('roles')
                     ->label('Roles (grupos en Authentik)')
@@ -105,7 +139,11 @@ class UserResource extends Resource
                     ->label('Roles')
                     ->badge()
                     ->placeholder('—')
-                    ->description(fn (User $record): ?string => $record->es_administrador ? 'Administrador' : null),
+                    ->description(fn (User $record): ?string => match (true) {
+                        $record->es_administrador => 'Administrador',
+                        $record->cuenta_compartida => 'Cuenta compartida',
+                        default => null,
+                    }),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->dateTime('d/m/Y')

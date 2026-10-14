@@ -31,8 +31,8 @@ class PermisosTest extends TestCase
 
     public function test_cada_accion_depende_de_la_matriz(): void
     {
-        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['pacientes' => ['ver']]]);
-        $this->actingAs(User::factory()->create(['roles' => ['CONSULTA']]));
+        Rol::create(['nombre' => 'LECTOR', 'permisos' => ['pacientes' => ['ver']]]);
+        $this->actingAs(User::factory()->create(['roles' => ['LECTOR']]));
 
         $this->get('/admin/pacientes')->assertOk();
         $this->get('/admin/pacientes/create')->assertForbidden();

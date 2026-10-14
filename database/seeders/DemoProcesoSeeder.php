@@ -62,6 +62,14 @@ class DemoProcesoSeeder extends Seeder
 
     public function run(GenerarTicket $generar, AlistarTicket $alistar, LlamadorDeTurnos $llamador): void
     {
+        // Pacientes inventados en la base de producción se mezclarían con los
+        // reales y con la auditoría. Ni con --force.
+        if (app()->isProduction()) {
+            $this->command?->error('DemoProcesoSeeder no corre en producción: crea pacientes y tickets inventados.');
+
+            return;
+        }
+
         $sede = Sede::where('codigo', 'PRIN')->firstOrFail();
         $admin = User::where('es_administrador', true)->firstOrFail();
 

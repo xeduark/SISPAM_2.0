@@ -31,5 +31,5 @@ matriz de permisos, módulos `turnos` (ver, llamar, ausente) y `entregas`.
 Rol sugerido: `farmacia` con esos dos módulos.
 
 ## Impresión térmica (JALTECH POS)
-El tiquete de turno (`public/img/Tiquete 0060.pdf`) es lo que se le entrega al paciente al llegar.
+El tiquete de turno (`docs/referencias/Tiquete 0060.pdf`) es lo que se le entrega al paciente al llegar.
 Sale de tickets, que no se toca ahora → **fuera de alcance** hasta que se decida.

@@ -146,7 +146,7 @@ acciones de cada módulo.
 | Módulo (clave) | Acciones |
 |---|---|
 | Pacientes (`pacientes`) | ver, crear, editar, eliminar |
-| Consultar paciente (`consultar_paciente`) | ver |
+| Consultar paciente (`consultar_paciente`) | ver (lo básico), ver_completo (todo lo que trae Savia) |
 | Orientación (`orientacion`) | usar, ver_orden |
 | Sedes (`sedes`) | ver, crear, editar, eliminar |
 | Usuarios (`usuarios`) | ver, crear, editar, eliminar |
@@ -155,12 +155,31 @@ Reglas:
 
 - **Sin "ver", el módulo no sale en el menú** y su URL responde 403.
 - **Los permisos de varios roles se suman.**
-- **Rol que se siembra:** `ORIENTADOR`, con Pacientes (ver, crear, editar),
-  Consultar paciente (ver) y Orientación (usar, ver la orden médica).
+- **Un módulo apagado en la instalación no existe para nadie**, ni para el
+  administrador: `SISPAM_MODULOS` es una lista blanca que `User::puede()`
+  revisa antes que todo lo demás. En la matriz siguen visibles, marcados
+  «apagado en esta instalación», y lo que se marque ahí vale cuando se
+  enciendan. Ver `docs/despliegue.md`.
+- **Roles que se siembran** (`RolSeeder`):
+  - `ORIENTADOR`: Pacientes (ver, crear, editar), Consultar paciente (ver y
+    ver todo), Orientación (usar, ver la orden médica) y Tickets (imprimir).
+  - `DISPENSADOR`: Entrega, Pacientes (ver), Tickets (ver) y Turnos.
+  - `CONSULTA`: solo Consultar paciente (ver lo básico). Ver la sección 5.
 - **Ojo con los roles que ya existen:** `RolSeeder` usa `firstOrCreate`, así que
-  no agrega permisos nuevos a un rol ya creado. Para que un `ORIENTADOR`
-  existente pueda abrir las órdenes, hay que marcarle **Ver la orden médica**
-  en Administración → Roles y permisos.
+  no agrega permisos nuevos a un rol ya creado. Los permisos nuevos de un rol
+  que ya está en la base llegan por migración, que **solo agrega** (por
+  ejemplo, `2026_10_06_110000_dar_permiso_de_imprimir_al_orientador` y
+  `2026_10_13_110000_ver_todo_lo_de_savia`).
+- **Consultar paciente tiene dos niveles.** `ver` muestra lo básico
+  (identificación, estado de la afiliación, régimen e IPS primaria);
+  `ver_completo` muestra además programas especiales, discapacidad, Sisbén,
+  contacto y lo demás. La migración `2026_10_13_110000_ver_todo_lo_de_savia`
+  le dio `ver_completo` a todo rol que ya tenía `ver` —menos a CONSULTA—, así
+  que nadie que ya consultaba perdió nada.
+- **Registrar o actualizar desde Consultar paciente** exige `pacientes.crear`
+  o `pacientes.editar`, y además `ver_completo`: lo que se guarda es la
+  respuesta completa de Savia. El enlace «Ver ficha en SISPAM» exige
+  `pacientes.ver`.
 
 ### Para desarrolladores
 
@@ -174,6 +193,17 @@ Reglas:
   - el resto → `editar`
 - **Proteger una página personalizada:** define `canAccess()` y usa `puede()`.
   `ConsultarPaciente` es un ejemplo.
+- **Proteger un método de Livewire:** ocultar el botón no basta, porque el
+  método se puede llamar aunque el botón no esté. Revisa el permiso **dentro
+  del método** (`ConsultarPaciente::guardar()` es el ejemplo), y marca con
+  `#[Locked]` las propiedades públicas de las que depende esa decisión: si
+  no, el navegador las puede cambiar.
+- **`$user->soloPuedeConsultar()`:** si lo único que tiene en la matriz es
+  Consultar paciente. A esa persona el Escritorio (`App\Filament\Pages\Dashboard`)
+  no le sale en el menú, y `/admin` la lleva directo a Consultar paciente.
+- **`RolConsultaTest::test_cualquier_otra_pantalla_le_responde_403`** recorre
+  todas las rutas del panel. Si agregas una pantalla y olvidas su permiso,
+  esa prueba falla.
 - **Agregar un módulo nuevo** (por ejemplo, tickets): súmalo a
   `Rol::MODULOS`. Aparece solo en la matriz.
 - **En las pruebas:** usa `User::factory()->administrador()` para un
@@ -200,7 +230,180 @@ Lo esperado:
 - Al registrar un paciente aparece el paso **Orientación** y la orden médica
   es obligatoria.
 
-## 5. Archivos
+## 5. Rol CONSULTA y cuentas compartidas
+
+Cuatro cuentas, una por sede, que usan varias personas de la sede a la vez
+para **consultar pacientes en Savia**. No registran, no actualizan, no editan
+y no entran a nada más.
+
+### Las cuentas
+
+| Sede | Documento en SISPAM = username en Authentik |
+|---|---|
+| PREMIUM PLAZA (PRP) | `ConsultaPRP` |
+| EDIFICIO BIC (BIC) | `ConsultaBIC` |
+| LA 30 (L30) | `ConsultaL30` |
+| AVENTURA (AVT) | `ConsultaAVT` |
+
+- Las crea `CuentasDeConsultaSeeder`, que se puede volver a correr: busca por
+  documento y no duplica. De una cuenta que ya existe solo asegura lo que la
+  hace cuenta compartida de su sede (la marca, que no sea administradora y su
+  sede); el nombre, el correo y si está activa son del administrador.
+- El seeder llama antes a `RolSeeder`, que crea el rol `CONSULTA` si falta
+  (con solo `consultar_paciente.ver`) y no toca los demás.
+- Se marcan con `users.cuenta_compartida`. En Usuarios lo ve y lo cambia
+  **solo un administrador**, igual que el interruptor de administrador, y en
+  el listado sale «Cuenta compartida» debajo de los roles.
+
+### Qué ve
+
+- **En el menú, solo «Consultar paciente»**. Al entrar al panel llega directo
+  ahí, no al Escritorio.
+- **Lo básico de Savia:** nombre, documento, fecha de nacimiento, estado de la
+  afiliación con su causa, régimen e IPS primaria (`ConsultarPaciente::CAMPOS_BASICOS`,
+  lista blanca). Lo demás se quita **en el servidor**: lo que está en una
+  propiedad pública de Livewire viaja al navegador aunque la vista no lo pinte.
+- **Si el paciente ya está en SISPAM** (con la fecha), pero sin botones: ni
+  «Registrar», ni «Actualizar», ni «Ver ficha».
+- **Cualquier otra pantalla, recurso o archivo le responde 403**. La sala de
+  espera (`/sala/{codigo}`) es pública para todos a propósito.
+
+### Fija en su sede
+
+Una cuenta compartida es la de una sede. `User::sedesDondePuedeTrabajar()`
+le devuelve solo la suya, así que **no tiene selector** aunque un
+administrador le asigne otras, y `cambiarDeSede()` la rechaza aunque el id
+llegue por la petición. Si una persona la moviera, las demás quedarían de
+pronto trabajando en otra sede.
+
+**Nunca es administradora:** `User::booted()` lo garantiza al guardar.
+
+### Quién consultó
+
+1. Al entrar, la persona llega a **«¿Quién está usando esta cuenta?»**
+   (`/admin/identificarse`) y escribe su nombre y su documento.
+   `ExigirQuienUsaLaCuenta` la trae aquí desde cualquier pantalla hasta que
+   responda. Se pide **una vez por sesión**: se olvida al iniciar sesión, al
+   cerrarla y al cerrarse por inactividad.
+2. `ConsultarPaciente::buscar()` lo vuelve a comprobar: un método de Livewire
+   se puede llamar sin pasar por la pantalla.
+3. **Cada línea de la auditoría** de esa sesión lleva la cuenta, la sede y la
+   persona (`auditorias.persona_nombre` y `persona_documento`).
+   `Auditoria::registrar()` la toma sola de la sesión (`QuienUsaLaCuenta`).
+   Queda además una línea «Se identificó».
+4. En Consultar paciente, la persona ve «Las consultas quedan a nombre de …» y
+   un botón **«Cambiar de persona»**. Así, si alguien dejó el equipo abierto,
+   quien llega no consulta a nombre ajeno sin darse cuenta.
+
+El dato vive en la sesión y no en la base: en otro equipo, otra persona puede
+estar usando la misma cuenta al mismo tiempo. Se usa solo para la auditoría,
+y no se comprueba contra nada: es la palabra de quien lo escribe, con la IP y
+el navegador desde donde lo dijo.
+
+**En Administración → Auditoría** la persona va dentro de la columna
+Usuario: debajo de la cuenta sale «ConsultaPRP · cuenta compartida» y
+«Persona: nombre · documento». Buscar por el nombre o el documento de la
+persona la encuentra, el filtro **«Solo cuentas compartidas»** deja solo esas
+cuentas, y la ficha de cada línea tiene la sección «Persona que usaba la
+cuenta».
+
+### Se cierra sola a los 30 minutos sin uso
+
+Solo las cuentas compartidas. Cuenta como uso cada petición: abrir una
+pantalla o consultar.
+
+- **En el navegador** (`resources/views/filament/cuenta-compartida/cierre-por-inactividad.blade.php`):
+  se cumple el plazo y la pantalla cierra sesión sola. El último paciente
+  consultado deja de estar a la vista y se cierra también la sesión de
+  Authentik (`LogoutResponse`). La hora del último uso se comparte entre
+  pestañas: una pestaña quieta no cierra la sesión de otra que sí se usa.
+- **En el servidor** (`CerrarCuentaCompartidaInactiva`): es la garantía, por
+  si el navegador no corrió el reloj (equipo suspendido). Una página que
+  llega tarde cierra todo y va a Authentik. A una petición de Livewire se le
+  responde 419; el navegador recarga, y esa recarga cierra.
+- En la auditoría queda «Sesión cerrada por inactividad», distinto de «Cerró
+  sesión».
+- El plazo se cambia con `CUENTA_COMPARTIDA_MINUTOS_SIN_USO` (comentada en
+  `.env.example`; sin ella son 30).
+
+### Varias personas a la vez, en distintos equipos
+
+**En SISPAM no hay nada que lo impida.** Las sesiones van en la tabla
+`sessions`, una por navegador. `AuthenticateSession` solo cierra las demás si
+cambia la contraseña, y aquí es nula. No se usa «recordarme» y nada llama a
+`logoutOtherDevices()`. Cerrar sesión en un equipo invalida solo esa sesión.
+La prueba `test_dos_personas_usan_la_misma_cuenta_a_la_vez_…` lo cubre.
+
+**En Authentik, revisa:**
+
+- **El stage *User Login* del flujo de autenticación:** si tu versión trae la
+  opción **«Terminate other sessions»**, tiene que estar apagada. Si no,
+  cada ingreso saca a los demás de la sede.
+- **MFA:** si el flujo exige TOTP o WebAuthn a todos, una cuenta compartida
+  necesitaría un dispositivo compartido. Decide si se exime a estas cuentas
+  con una política.
+- **Bloqueo por intentos fallidos** (política de reputación): varias personas
+  equivocándose con la misma contraseña pueden bloquear la cuenta para toda
+  la sede.
+- **Vencimiento de contraseña:** cuando vence, todos en la sede necesitan la
+  nueva.
+- **El *invalidation flow* del proveedor de SISPAM:** para que cerrar sesión
+  (a mano o por inactividad) cierre también Authentik en ese equipo, el flujo
+  tiene que incluir el stage *User Logout*. Si solo cierra la sesión de la
+  aplicación, el siguiente en ese equipo entra con un clic y sin contraseña
+  (aunque igual tiene que decir quién es).
+
+### Crearlas en Authentik
+
+1. **Directory → Groups → Create:** nombre `CONSULTA`, en mayúsculas, igual
+   al rol.
+2. **Directory → Users → Create**, una por sede: username `ConsultaPRP`
+   (y `ConsultaBIC`, `ConsultaL30`, `ConsultaAVT`), nombre «Consulta PREMIUM
+   PLAZA», tipo *Internal*. Luego **Set password** con la contraseña que se
+   le va a dar a la sede.
+3. En cada usuario, pestaña **Groups → Add to existing group → `CONSULTA`**.
+4. Si la aplicación de SISPAM en Authentik tiene políticas que limitan quién
+   entra por grupo, agrega `CONSULTA`.
+5. Revisa la lista de arriba («En Authentik, revisa»).
+
+### Puesta en marcha
+
+```bash
+php artisan migrate                                  # cuenta_compartida, persona_* y ver_completo
+php artisan db:seed --class=CuentasDeConsultaSeeder  # rol CONSULTA y las 4 cuentas
+```
+
+### Probarlo
+
+1. En una ventana privada, entra a `/admin` con `ConsultaPRP`. Llegas a
+   «¿Quién está usando esta cuenta?». Escribe un nombre y un documento.
+2. Llegas a Consultar paciente. En el menú no hay nada más, y arriba no está
+   el selector de sede. Consulta una cédula: ves lo básico, el estado en
+   SISPAM y ningún botón.
+3. Escribe a mano `/admin/pacientes` o `/admin`: la primera responde 403 y la
+   segunda vuelve a Consultar paciente.
+4. En otro navegador o equipo entra con la misma cuenta y otra persona.
+   Consulten los dos. Como administrador, en **Administración → Auditoría**
+   cada consulta sale con su persona.
+5. Para probar el cierre sin esperar media hora, pon
+   `CUENTA_COMPARTIDA_MINUTOS_SIN_USO=1` en el `.env`, corre
+   `php artisan config:clear` y deja la pantalla quieta un minuto. Al
+   terminar quita la variable.
+6. Con un ORIENTADOR, todo sigue igual: ves todo lo de Savia y los botones
+   Registrar, Actualizar y Ver ficha.
+
+### Archivos
+
+- `app/Filament/Pages/Identificarse.php` y su vista: «¿Quién está usando esta cuenta?».
+- `app/Filament/Pages/Dashboard.php`: el Escritorio, que manda a Consultar paciente a quien solo consulta.
+- `app/Http/Middleware/ExigirQuienUsaLaCuenta.php` y `CerrarCuentaCompartidaInactiva.php`.
+- `app/Services/CuentaCompartida/QuienUsaLaCuenta.php`: la persona en la sesión.
+- `resources/views/filament/cuenta-compartida/cierre-por-inactividad.blade.php`: el reloj del navegador.
+- `database/migrations/2026_10_13_100000_cuentas_compartidas.php` y `2026_10_13_110000_ver_todo_lo_de_savia.php`.
+- `database/seeders/CuentasDeConsultaSeeder.php`.
+- `tests/Feature/CuentasCompartidas/`.
+
+## 6. Archivos
 
 **Nuevos**
 
@@ -230,10 +433,9 @@ Lo esperado:
 - `DatabaseSeeder.php`: llama a `RolSeeder`.
 - Las pruebas existentes: actúan como administrador o con un rol de la matriz.
 
-## 6. Pruebas
+## 7. Pruebas
 
 ```bash
 php artisan test
+php artisan test tests/Feature/CuentasCompartidas   # rol CONSULTA y cuentas compartidas
 ```
-
-Pasan las 100 pruebas.

@@ -19,7 +19,7 @@ class RolSeeder extends Seeder
         Rol::firstOrCreate(['nombre' => 'ORIENTADOR'], [
             'permisos' => [
                 'pacientes' => ['ver', 'crear', 'editar'],
-                'consultar_paciente' => ['ver'],
+                'consultar_paciente' => ['ver', 'ver_completo'],
                 'orientacion' => ['usar', 'ver_orden'],
                 'tickets' => ['imprimir'],
             ],
@@ -32,6 +32,15 @@ class RolSeeder extends Seeder
                 'pacientes' => ['ver'],
                 'tickets' => ['ver'],
                 'turnos' => ['ver', 'llamar', 'ausente'],
+            ],
+        ]);
+
+        // Las cuentas compartidas de cada sede (`CuentasDeConsultaSeeder`):
+        // consultan en Savia y ven lo básico. No registran, no editan y no
+        // entran a nada más. Sin `ver_completo` a propósito.
+        Rol::firstOrCreate(['nombre' => 'CONSULTA'], [
+            'permisos' => [
+                'consultar_paciente' => ['ver'],
             ],
         ]);
     }

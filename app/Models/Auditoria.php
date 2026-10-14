@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Factories\AuditoriaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -49,8 +50,17 @@ class Auditoria extends Model
      */
     public const ACCION_VIO_GALERIA = 'vio_galeria';
 
+    /** Alguien se mudó a otra sede desde el selector de la barra. */
+    public const ACCION_CAMBIO_DE_SEDE = 'cambio_de_sede';
+
     /** El cierre del día venció los tickets que nadie alcanzó a atender. */
     public const ACCION_CERRO_DIA = 'cerro_dia';
+
+    /** Alguien dijo quién es antes de usar una cuenta compartida. */
+    public const ACCION_SE_IDENTIFICO = 'se_identifico';
+
+    /** Una cuenta compartida llevaba demasiado tiempo sin uso y se cerró sola. */
+    public const ACCION_CERRO_POR_INACTIVIDAD = 'cerro_por_inactividad';
 
     /** Etiquetas en español para mostrar la acción en pantalla. */
     public const ACCIONES = [
@@ -65,7 +75,10 @@ class Auditoria extends Model
         self::ACCION_ABRIO_ACTA_ENTREGA => 'Abrió un acta de entrega',
         self::ACCION_RECTIFICO_TRANSCRIPCION => 'Rectificó una transcripción',
         self::ACCION_VIO_GALERIA => 'Vio la galería de fórmulas',
+        self::ACCION_CAMBIO_DE_SEDE => 'Cambió de sede',
         self::ACCION_CERRO_DIA => 'Cerró el día',
+        self::ACCION_SE_IDENTIFICO => 'Se identificó',
+        self::ACCION_CERRO_POR_INACTIVIDAD => 'Sesión cerrada por inactividad',
     ];
 
     /** Color del badge por acción, dentro de la paleta institucional. */
@@ -81,7 +94,10 @@ class Auditoria extends Model
         self::ACCION_ABRIO_ACTA_ENTREGA => 'warning',
         self::ACCION_RECTIFICO_TRANSCRIPCION => 'warning',
         self::ACCION_VIO_GALERIA => 'gray',
+        self::ACCION_CAMBIO_DE_SEDE => 'info',
         self::ACCION_CERRO_DIA => 'warning',
+        self::ACCION_SE_IDENTIFICO => 'info',
+        self::ACCION_CERRO_POR_INACTIVIDAD => 'gray',
     ];
 
     /** Se escribe una vez y queda; por eso no hay `updated_at`. */
@@ -94,6 +110,8 @@ class Auditoria extends Model
         'usuario_id',
         'usuario_nombre',
         'usuario_documento',
+        'persona_nombre',
+        'persona_documento',
         'sede_id',
         'accion',
         'entidad_tipo',
@@ -123,6 +141,10 @@ class Auditoria extends Model
      * de quien lo ejecuta —el cierre del día, por ejemplo, que lo corre una
      * tarea programada sin usuario y cierra sede por sede.
      *
+     * Con una cuenta compartida, además de la cuenta queda la persona que
+     * dijo estar usándola (`QuienUsaLaCuenta`). Se toma sola: nadie que
+     * registre algo tiene que acordarse de pasarla.
+     *
      * @param  array<string, array{0: mixed, 1: mixed}>|null  $cambios
      */
     public static function registrar(
@@ -136,11 +158,14 @@ class Auditoria extends Model
     ): ?self {
         try {
             $usuario ??= auth()->user();
+            $persona = QuienUsaLaCuenta::persona($usuario);
 
             return static::create([
                 'usuario_id' => $usuario?->getKey(),
                 'usuario_nombre' => $usuario?->nombre_completo ?? 'Sistema',
                 'usuario_documento' => $usuario?->documento,
+                'persona_nombre' => $persona['nombre'] ?? null,
+                'persona_documento' => $persona['documento'] ?? null,
                 'sede_id' => $sedeId ?? $usuario?->sede_id,
                 'accion' => $accion,
                 'entidad_tipo' => $entidadTipo,

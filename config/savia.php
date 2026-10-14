@@ -19,7 +19,14 @@ return [
     // Token fijo, solo si algún día entregan uno sin credenciales.
     'token' => env('SAVIA_TOKEN'),
 
-    'timeout' => (int) env('SAVIA_TIMEOUT', 30),
+    /*
+     * Segundos por petición. En las pruebas de octubre de 2026 Savia respondió
+     * en 0,5 s de mediana y 1 s la más lenta: 10 s es diez veces eso. Más alto
+     * solo retiene procesos de PHP cuando Savia está lenta (ver
+     * docs/despliegue.md). El `?:` evita que una variable vacía deje 0.
+     */
+    'timeout' => (int) (env('SAVIA_TIMEOUT') ?: 10),
+    'connect_timeout' => (int) (env('SAVIA_CONNECT_TIMEOUT') ?: 5),
     'verify_ssl' => (bool) env('SAVIA_VERIFY_SSL', false),
 
     // Minutos que se reutiliza el token cuando la respuesta no trae expires_in.

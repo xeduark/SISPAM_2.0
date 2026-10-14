@@ -2,12 +2,21 @@
 
 namespace App\Services\Savia;
 
+use App\Models\User;
+
 /**
  * Resultado de una consulta al servicio, ya interpretado.
  * Lo que la vista necesita saber, sin tener que mirar el JSON crudo.
  */
 class RespuestaConsulta
 {
+    /**
+     * Respuestas de Savia que hablan del documento consultado y se le pueden
+     * mostrar tal cual a quien consulta: éxito, no encontrado y documento mal
+     * escrito. Todo lo demás es un problema del servicio o de la configuración.
+     */
+    private const CODIGOS_PARA_QUIEN_CONSULTA = ['0', '-1000', '-1003', '-1004'];
+
     public function __construct(
         public readonly int $httpCode,
         public readonly ?array $json,
@@ -28,6 +37,63 @@ class RespuestaConsulta
     public function exitosa(): bool
     {
         return $this->codigo() === '0' && $this->httpCode === 200;
+    }
+
+    /**
+     * Savia no contestó: tiempo agotado, conexión rechazada o un error 5xx.
+     * Es lo que cuenta para pausar las consultas (`SaviaClient`).
+     */
+    public function esFallaDeRed(): bool
+    {
+        return $this->errorRed !== null || $this->httpCode >= 500;
+    }
+
+    /**
+     * Algo que quien consulta no puede resolver: red, token, credenciales,
+     * IP no autorizada, una respuesta que no se entiende. El detalle sirve al
+     * administrador; a los demás se les dice qué hacer (`diagnosticoPara()`).
+     */
+    public function esFallaTecnica(): bool
+    {
+        if ($this->errorRed !== null || $this->errorToken !== null) {
+            return true;
+        }
+
+        // Decide el código de Savia, no el HTTP: el «no encontrado» llega
+        // unas veces con 200 y otras con 404.
+        return ! in_array($this->codigo(), self::CODIGOS_PARA_QUIEN_CONSULTA, true);
+    }
+
+    /**
+     * El diagnóstico que ve esta persona.
+     *
+     * El detalle técnico —el mensaje de cURL con la dirección del servicio,
+     * nombres de variables del .env— solo lo ve el administrador. Los demás
+     * ven qué hacer; el detalle queda en el log (`SaviaClient`).
+     *
+     * @return array{tono: string, titulo: string, detalle: string}
+     */
+    public function diagnosticoPara(?User $usuario): array
+    {
+        if ($usuario?->es_administrador || ! $this->esFallaTecnica()) {
+            return $this->diagnostico();
+        }
+
+        return self::diagnosticoSinDetalle();
+    }
+
+    /**
+     * Lo que ve quien no administra cuando Savia falla.
+     *
+     * @return array{tono: string, titulo: string, detalle: string}
+     */
+    public static function diagnosticoSinDetalle(): array
+    {
+        return [
+            'tono' => 'error',
+            'titulo' => 'Savia no respondió',
+            'detalle' => 'Espera un momento y vuelve a intentarlo. Si sigue fallando, avisa a un administrador.',
+        ];
     }
 
     /**
