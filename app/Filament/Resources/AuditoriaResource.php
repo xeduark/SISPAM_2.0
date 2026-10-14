@@ -14,6 +14,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\HtmlString;
 
 /**
  * Rastro de quién hizo qué. Solo se consulta: ni el administrador puede
@@ -71,10 +72,12 @@ class AuditoriaResource extends Resource
                     ->label('Fecha y hora')
                     ->dateTime('d/m/Y H:i:s')
                     ->sortable(),
+                // Con una cuenta compartida, debajo de la cuenta va la persona
+                // que dijo estar usándola: es lo que dice quién fue de verdad.
                 Tables\Columns\TextColumn::make('usuario_nombre')
                     ->label('Usuario')
-                    ->description(fn (Auditoria $record): ?string => $record->usuario_documento)
-                    ->searchable(['usuario_nombre', 'usuario_documento'])
+                    ->description(fn (Auditoria $record): HtmlString|string|null => static::quienFue($record))
+                    ->searchable(['usuario_nombre', 'usuario_documento', 'persona_nombre', 'persona_documento'])
                     ->sortable(),
                 Tables\Columns\TextColumn::make('sede.nombre')
                     ->label('Sede')
@@ -98,11 +101,19 @@ class AuditoriaResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('usuario'))
             ->filters([
                 Tables\Filters\SelectFilter::make('accion')
                     ->label('Acción')
                     ->options(Auditoria::ACCIONES)
                     ->multiple(),
+                Tables\Filters\Filter::make('cuenta_compartida')
+                    ->label('Solo cuentas compartidas')
+                    ->toggle()
+                    ->query(fn (Builder $query): Builder => $query->whereHas(
+                        'usuario',
+                        fn (Builder $usuario): Builder => $usuario->where('cuenta_compartida', true),
+                    )),
                 Tables\Filters\SelectFilter::make('sede_id')
                     ->label('Sede')
                     ->options(fn (): array => Sede::opciones()),
@@ -178,6 +189,17 @@ class AuditoriaResource extends Resource
                     ])
                     ->columns(3),
 
+                Infolists\Components\Section::make('Persona que usaba la cuenta')
+                    ->description('La cuenta es compartida: estos son el nombre y el documento que escribió quien la estaba usando.')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('persona_nombre')
+                            ->label('Nombre'),
+                        Infolists\Components\TextEntry::make('persona_documento')
+                            ->label('Documento'),
+                    ])
+                    ->columns(3)
+                    ->visible(fn (Auditoria $record): bool => filled($record->persona_documento)),
+
                 Infolists\Components\Section::make('Qué cambió')
                     ->description('Solo los campos que el modelo declara auditables. Los datos de salud nunca se registran.')
                     ->schema([
@@ -191,6 +213,27 @@ class AuditoriaResource extends Resource
                     ])
                     ->visible(fn (Auditoria $record): bool => filled($record->cambios)),
             ]);
+    }
+
+    /**
+     * Lo que va debajo del nombre en la columna Usuario: el documento de la
+     * cuenta y, si es compartida, la persona que la estaba usando.
+     */
+    public static function quienFue(Auditoria $record): HtmlString|string|null
+    {
+        $compartida = (bool) $record->usuario?->cuenta_compartida;
+
+        if (! $compartida && blank($record->persona_documento)) {
+            return $record->usuario_documento;
+        }
+
+        $lineas = [trim($record->usuario_documento.($compartida ? ' · cuenta compartida' : ''), ' ·')];
+
+        if (filled($record->persona_documento)) {
+            $lineas[] = "Persona: {$record->persona_nombre} · {$record->persona_documento}";
+        }
+
+        return new HtmlString(implode('<br>', array_map('e', $lineas)));
     }
 
     public static function getPages(): array

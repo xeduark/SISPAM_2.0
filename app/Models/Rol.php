@@ -30,7 +30,14 @@ class Rol extends Model
         ],
         'consultar_paciente' => [
             'nombre' => 'Consultar paciente',
-            'acciones' => ['ver' => 'Ver'],
+            'acciones' => [
+                // Identificación, estado de la afiliación, régimen e IPS primaria.
+                'ver' => 'Ver lo básico',
+                // Programas especiales, discapacidad, Sisbén, contacto…: datos
+                // de salud. Se concede aparte para que el rol CONSULTA, que
+                // usan cuentas compartidas, no los vea.
+                'ver_completo' => 'Ver todo lo que trae Savia',
+            ],
         ],
         'orientacion' => [
             'nombre' => 'Orientación (orden médica y alto costo)',
@@ -118,6 +125,17 @@ class Rol extends Model
         return [
             'permisos' => 'array',
         ];
+    }
+
+    /**
+     * Si el módulo está encendido en esta instalación (`SISPAM_MODULOS`).
+     * Con la lista vacía, todos lo están.
+     */
+    public static function moduloEncendido(string $modulo): bool
+    {
+        $encendidos = (array) config('sispam.modulos', []);
+
+        return $encendidos === [] || in_array($modulo, $encendidos, true);
     }
 
     public function descripcionParaAuditoria(): string

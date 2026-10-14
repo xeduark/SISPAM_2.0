@@ -4,23 +4,66 @@ namespace App\Filament\Pages;
 
 use App\Models\Auditoria;
 use App\Models\Paciente;
+use App\Services\CuentaCompartida\QuienUsaLaCuenta;
+use App\Services\Savia\RespuestaConsulta;
 use App\Services\Savia\SaviaClient;
+use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Livewire\Attributes\Locked;
 
 /**
  * Consulta de un afiliado en Savia Salud EPS.
  *
- * Se escribe el documento y la pantalla muestra todo lo que devuelve el
- * servicio, sin necesidad de crear antes el paciente en SISPAM.
+ * Se escribe el documento y la pantalla muestra lo que devuelve el servicio,
+ * sin necesidad de crear antes el paciente en SISPAM.
+ *
+ * ## Qué ve cada quien
+ *
+ * - `consultar_paciente.ver`: lo básico (`CAMPOS_BASICOS`). Es lo del rol
+ *   CONSULTA, que usan cuentas compartidas.
+ * - `consultar_paciente.ver_completo`: todo, programas especiales y datos de
+ *   salud incluidos.
+ *
+ * Lo que no se puede ver se quita **en el servidor**, antes de guardarlo en
+ * `$afiliado`: lo que está en una propiedad pública de Livewire viaja al
+ * navegador aunque la vista no lo pinte.
+ *
+ * ## Registrar y actualizar
+ *
+ * Exigen `pacientes.crear` o `pacientes.editar`, y se comprueba **dentro de
+ * `guardar()`**: un método de Livewire se puede llamar aunque el botón no se
+ * haya pintado. Por la misma razón, lo que decide los permisos (`afiliado`,
+ * `pacienteId`) está bloqueado con `#[Locked]`: el navegador no lo puede
+ * cambiar.
  */
 class ConsultarPaciente extends Page implements HasForms
 {
     use InteractsWithForms;
+
+    /**
+     * Lo que ve quien solo tiene `consultar_paciente.ver`: identificación,
+     * estado de la afiliación, régimen e IPS primaria. Lista blanca: un campo
+     * nuevo que agregue Savia no se ve hasta que alguien lo ponga aquí.
+     */
+    public const CAMPOS_BASICOS = [
+        'tipoDocumentoAfiliado',
+        'documentoAfiliado',
+        'primerNombreAfiliado',
+        'segundoNombreAfiliado',
+        'primerApellidoAfiliado',
+        'segundoApellidoAfiliado',
+        'fechaNacimientoAfiliado',
+        'estadoAfiliacion',
+        'causaEstado',
+        'regimen',
+        'ipsprimaria',
+        'sedeIPSPrimaria',
+    ];
 
     protected static ?string $navigationIcon = 'heroicon-o-magnifying-glass';
 
@@ -40,24 +83,58 @@ class ConsultarPaciente extends Page implements HasForms
     /** @var array<string, mixed> */
     public array $datos = [];
 
-    /** Afiliado devuelto por Savia, con los programas ya normalizados. */
+    /** Afiliado devuelto por Savia, con los programas ya normalizados y recortado a lo que se puede ver. */
+    #[Locked]
     public ?array $afiliado = null;
 
     /** @var array{tono: string, titulo: string, detalle: string}|null */
+    #[Locked]
     public ?array $diagnostico = null;
 
+    #[Locked]
     public bool $consultado = false;
 
     public bool $buscando = false;
 
     /** Id del paciente en SISPAM, si ya estaba registrado. */
+    #[Locked]
     public ?int $pacienteId = null;
 
+    #[Locked]
     public ?string $registradoDesde = null;
 
     public function mount(): void
     {
         $this->form->fill(['tipo_documento' => 'CC']);
+    }
+
+    /**
+     * Con una cuenta compartida, a nombre de quién quedan las consultas. Se
+     * le muestra a la misma persona para que, si el equipo lo dejó abierto
+     * otra, no consulte a nombre ajeno sin darse cuenta.
+     */
+    public function getSubheading(): ?string
+    {
+        $persona = QuienUsaLaCuenta::persona();
+
+        return $persona === null ? null : "Las consultas quedan a nombre de {$persona['nombre']}.";
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('cambiarDePersona')
+                ->label('Cambiar de persona')
+                ->icon('heroicon-m-arrows-right-left')
+                ->color('gray')
+                ->outlined()
+                ->visible(fn (): bool => QuienUsaLaCuenta::persona() !== null)
+                ->action(function (): void {
+                    QuienUsaLaCuenta::olvidar();
+
+                    $this->redirect(Identificarse::getUrl());
+                }),
+        ];
     }
 
     public function form(Form $form): Form
@@ -93,6 +170,16 @@ class ConsultarPaciente extends Page implements HasForms
      */
     public function buscar(): void
     {
+        // Una cuenta compartida no consulta sin decir antes quién es: es lo
+        // único que deja saber, después, cuál de las personas de la sede hizo
+        // la consulta. `ExigirQuienUsaLaCuenta` ya lo pide al abrir la
+        // pantalla; esto cubre a quien llame el método directamente.
+        if (QuienUsaLaCuenta::falta()) {
+            $this->redirect(Identificarse::getUrl());
+
+            return;
+        }
+
         $datos = $this->form->getState();
 
         $this->reiniciarResultado();
@@ -100,11 +187,13 @@ class ConsultarPaciente extends Page implements HasForms
         $cliente = app(SaviaClient::class);
 
         if (! $cliente->configurado()) {
-            $this->diagnostico = [
-                'tono' => 'error',
-                'titulo' => 'La consulta a Savia no está configurada',
-                'detalle' => 'Faltan las credenciales SAVIA_USERNAME y SAVIA_PASSWORD. Comunícate con un administrador.',
-            ];
+            $this->diagnostico = auth()->user()?->es_administrador
+                ? [
+                    'tono' => 'error',
+                    'titulo' => 'La consulta a Savia no está configurada',
+                    'detalle' => 'Faltan las credenciales SAVIA_USERNAME y SAVIA_PASSWORD en el .env.',
+                ]
+                : RespuestaConsulta::diagnosticoSinDetalle();
             $this->consultado = true;
 
             return;
@@ -116,7 +205,8 @@ class ConsultarPaciente extends Page implements HasForms
         ]);
 
         $this->consultado = true;
-        $this->diagnostico = $respuesta->diagnostico();
+        // El detalle técnico de una falla solo lo ve el administrador.
+        $this->diagnostico = $respuesta->diagnosticoPara(auth()->user());
 
         $afiliado = $respuesta->primerAfiliado();
 
@@ -143,7 +233,10 @@ class ConsultarPaciente extends Page implements HasForms
             return;
         }
 
-        $this->afiliado = $afiliado;
+        // Lo que no se puede ver no sale del servidor.
+        $this->afiliado = $this->veTodo
+            ? $afiliado
+            : array_intersect_key($afiliado, array_flip(self::CAMPOS_BASICOS));
 
         $paciente = Paciente::where('tipo_documento', $afiliado['tipoDocumentoAfiliado'] ?? $datos['tipo_documento'])
             ->where('numero_documento', $afiliado['documentoAfiliado'] ?? $datos['numero_documento'])
@@ -163,6 +256,19 @@ class ConsultarPaciente extends Page implements HasForms
         }
 
         $atributos = Paciente::atributosDesdeSavia($this->afiliado);
+
+        // Si es crear o actualizar lo dice la base, no `pacienteId`: el
+        // permiso no puede depender de lo que se pintó en la pantalla.
+        $existe = Paciente::where('tipo_documento', $atributos['tipo_documento'])
+            ->where('numero_documento', $atributos['numero_documento'] ?? null)
+            ->exists();
+
+        abort_unless(
+            $this->puedeGuardar($existe),
+            403,
+            $existe ? 'No tienes permiso para actualizar pacientes.' : 'No tienes permiso para registrar pacientes.',
+        );
+
         $atributos['consultado_en_savia_at'] = now();
         $atributos['codigo_respuesta_savia'] = '0';
 
@@ -174,7 +280,7 @@ class ConsultarPaciente extends Page implements HasForms
             $atributos,
         );
 
-        $nuevo = $this->pacienteId === null;
+        $nuevo = ! $existe;
 
         $this->pacienteId = $paciente->id;
         $this->registradoDesde = $paciente->created_at?->format('d/m/Y');
@@ -201,9 +307,45 @@ class ConsultarPaciente extends Page implements HasForms
         $this->registradoDesde = null;
     }
 
+    /**
+     * Registrar exige `pacientes.crear` y actualizar `pacientes.editar`.
+     *
+     * Las dos piden además ver todo lo de Savia: es lo que se guarda, y con
+     * lo básico solo se borrarían los programas y lo demás que el paciente
+     * ya tenía.
+     */
+    private function puedeGuardar(bool $existe): bool
+    {
+        $usuario = auth()->user();
+
+        return (bool) $usuario?->puede($existe ? 'pacientes.editar' : 'pacientes.crear')
+            && $usuario->puede('consultar_paciente.ver_completo');
+    }
+
     /* ------------------------------------------------------------------ *
      *  Ayudas para la vista
      * ------------------------------------------------------------------ */
+
+    /** Si ve todo lo que trae Savia o solo lo básico. */
+    public function getVeTodoProperty(): bool
+    {
+        return (bool) auth()->user()?->puede('consultar_paciente.ver_completo');
+    }
+
+    public function getPuedeRegistrarProperty(): bool
+    {
+        return $this->pacienteId === null && $this->puedeGuardar(existe: false);
+    }
+
+    public function getPuedeActualizarProperty(): bool
+    {
+        return $this->pacienteId !== null && $this->puedeGuardar(existe: true);
+    }
+
+    public function getPuedeVerFichaProperty(): bool
+    {
+        return $this->pacienteId !== null && (bool) auth()->user()?->puede('pacientes.ver');
+    }
 
     public function getNombreCompletoProperty(): string
     {

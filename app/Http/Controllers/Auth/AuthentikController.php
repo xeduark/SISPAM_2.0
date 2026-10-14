@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\CerrarCuentaCompartidaInactiva;
 use App\Models\User;
+use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Exception;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
@@ -54,6 +56,13 @@ class AuthentikController extends Controller
         // Los roles se administran en Authentik: se toman sus grupos en cada ingreso,
         // así quitar a alguien de un grupo le quita el rol la próxima vez que entre.
         $user->update(['roles' => array_values((array) ($datos['groups'] ?? []))]);
+
+        // Cada inicio de sesión empieza de cero: quien use una cuenta
+        // compartida vuelve a decir quién es, y el reloj de inactividad
+        // arranca ahora. Antes del login, para que la línea «Ingresó» no
+        // salga a nombre de la persona anterior.
+        QuienUsaLaCuenta::olvidar();
+        session()->forget(CerrarCuentaCompartidaInactiva::SESION);
 
         $panel->auth()->login($user);
         session()->regenerate();

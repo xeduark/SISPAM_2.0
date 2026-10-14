@@ -6,6 +6,7 @@ use App\Contracts\Domina\DominaClientInterface;
 use App\Contracts\Inventario\CatalogoInventarioInterface;
 use App\Contracts\Ticket\TicketCierreInterface;
 use App\Contracts\Ticket\TicketConsultaInterface;
+use App\Http\Middleware\CerrarCuentaCompartidaInactiva;
 use App\Http\Responses\LogoutResponse;
 use App\Jobs\DescontarInventarioDeEntrega;
 use App\Jobs\LeerFormula;
@@ -141,9 +142,15 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
+            // Una cuenta compartida que se cerró sola no es alguien que cerró
+            // sesión: se distingue para que el rastro no diga lo que no pasó.
+            $porInactividad = CerrarCuentaCompartidaInactiva::esCierrePorInactividad(request());
+
             Auditoria::registrar(
-                accion: Auditoria::ACCION_CERRO_SESION,
-                descripcion: 'Cerró sesión',
+                accion: $porInactividad ? Auditoria::ACCION_CERRO_POR_INACTIVIDAD : Auditoria::ACCION_CERRO_SESION,
+                descripcion: $porInactividad
+                    ? 'La sesión se cerró tras '.CerrarCuentaCompartidaInactiva::minutos().' minutos sin uso'
+                    : 'Cerró sesión',
                 entidadTipo: 'usuario',
                 entidadId: $evento->user->getKey(),
                 usuario: $evento->user,

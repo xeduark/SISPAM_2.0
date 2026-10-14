@@ -3,6 +3,8 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\Login;
+use App\Http\Middleware\CerrarCuentaCompartidaInactiva;
+use App\Http\Middleware\ExigirQuienUsaLaCuenta;
 use Filament\Enums\ThemeMode;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
@@ -10,7 +12,6 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationItem;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -89,11 +90,25 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::TOPBAR_END,
                 fn (): string => Blade::render('@livewire(\'selector-de-sede\')'),
             )
+            // Las cuentas compartidas se cierran solas tras un rato sin uso;
+            // este es el reloj del navegador. El del servidor es
+            // `CerrarCuentaCompartidaInactiva`.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => auth()->user()?->cuenta_compartida
+                    ? view('filament.cuenta-compartida.cierre-por-inactividad')->render()
+                    : '',
+            )
+            // En producción, un error de Livewire sale como notificación en
+            // español en vez del recuadro con «Server Error».
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => config('app.debug') ? '' : view('filament.errores-de-livewire')->render(),
+            )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
+            // El Escritorio es `App\Filament\Pages\Dashboard`, que se descubre
+            // solo: a quien solo puede consultar lo manda a Consultar paciente.
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
-            ->pages([
-                Pages\Dashboard::class,
-            ])
             // La pantalla pública de la sala de la sede de quien entra (ej. /sala/PRIN).
             ->navigationItems([
                 NavigationItem::make('Pantalla de sala')
@@ -122,6 +137,13 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            // Solo actúan sobre cuentas compartidas. Persistentes para que
+            // también corran en las peticiones de Livewire: consultar es una
+            // de ellas, y cuenta como uso y exige saber quién consulta.
+            ->authMiddleware([
+                CerrarCuentaCompartidaInactiva::class,
+                ExigirQuienUsaLaCuenta::class,
+            ], isPersistent: true);
     }
 }

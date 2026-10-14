@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Rol;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -22,4 +23,6 @@ Artisan::command('inspire', function () {
  */
 Schedule::command('tickets:cerrar-dia')
     ->dailyAt('02:00')
-    ->withoutOverlapping();
+    ->withoutOverlapping()
+    // Con los tickets apagados en esta instalación (`SISPAM_MODULOS`) no hay nada que cerrar.
+    ->when(fn (): bool => Rol::moduloEncendido('tickets'));

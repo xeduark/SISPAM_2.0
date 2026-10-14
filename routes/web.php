@@ -48,8 +48,11 @@ Route::middleware('auth')->get('/tickets/{ticket}/imprimir', [TicketImpresionCon
  * Pantalla de la sala de espera. Es **pública a propósito**: el televisor de la
  * sala no inicia sesión. Solo publica turno y ventanilla; nunca el nombre del
  * paciente ni nada de la fórmula. Ver `SalaController`.
+ *
+ * Como no tiene sesión, no pasa por `User::puede()`: si el turnero está
+ * apagado en esta instalación (`SISPAM_MODULOS`), responde 404.
  */
-Route::controller(SalaController::class)->group(function () {
+Route::middleware('modulo:turnos')->controller(SalaController::class)->group(function () {
     Route::get('/sala/{sede:codigo}', 'mostrar')->name('sala');
     Route::get('/sala/{sede:codigo}/turnos', 'turnos')->name('sala.turnos');
 });

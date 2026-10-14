@@ -98,27 +98,40 @@
                     </div>
                 @endif
 
-                <div class="mt-4 flex flex-wrap items-center gap-3">
-                    <x-filament::button icon="heroicon-m-arrow-down-tray" wire:click="guardar" wire:loading.attr="disabled">
-                        {{ $pacienteId ? 'Actualizar en SISPAM' : 'Registrar en SISPAM' }}
-                    </x-filament::button>
+                {{-- Cada botón sale solo con su permiso; guardar() lo vuelve a comprobar. --}}
+                @if ($this->puedeRegistrar || $this->puedeActualizar || $pacienteId)
+                    <div class="mt-4 flex flex-wrap items-center gap-3">
+                        @if ($this->puedeRegistrar || $this->puedeActualizar)
+                            <x-filament::button icon="heroicon-m-arrow-down-tray" wire:click="guardar" wire:loading.attr="disabled">
+                                {{ $pacienteId ? 'Actualizar en SISPAM' : 'Registrar en SISPAM' }}
+                            </x-filament::button>
+                        @endif
 
-                    @if ($pacienteId)
-                        <x-filament::button
-                            tag="a"
-                            color="gray"
-                            outlined
-                            icon="heroicon-m-arrow-top-right-on-square"
-                            :href="\App\Filament\Resources\PacienteResource::getUrl('view', ['record' => $pacienteId])"
-                        >
-                            Ver ficha en SISPAM
-                        </x-filament::button>
+                        @if ($this->puedeVerFicha)
+                            <x-filament::button
+                                tag="a"
+                                color="gray"
+                                outlined
+                                icon="heroicon-m-arrow-top-right-on-square"
+                                :href="\App\Filament\Resources\PacienteResource::getUrl('view', ['record' => $pacienteId])"
+                            >
+                                Ver ficha en SISPAM
+                            </x-filament::button>
+                        @endif
 
-                        <span class="text-sm text-gray-500 dark:text-gray-400">
-                            Registrado desde el {{ $registradoDesde }}
-                        </span>
-                    @endif
-                </div>
+                        @if ($pacienteId)
+                            <span class="text-sm text-gray-500 dark:text-gray-400">
+                                Registrado desde el {{ $registradoDesde }}
+                            </span>
+                        @endif
+                    </div>
+                @endif
+
+                @unless ($this->veTodo)
+                    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                        Ves los datos básicos de la afiliación: identificación, estado, régimen e IPS primaria.
+                    </p>
+                @endunless
             </x-filament::section>
 
             {{-- Programas especiales y RIAS --}}

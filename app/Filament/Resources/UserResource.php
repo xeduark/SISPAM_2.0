@@ -8,6 +8,7 @@ use App\Models\Sede;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -82,7 +83,8 @@ class UserResource extends Resource
                     ->multiple()
                     ->preload()
                     ->searchable()
-                    ->hidden(fn (?User $record): bool => (bool) $record?->es_administrador)
+                    // Una cuenta compartida queda fija en su sede.
+                    ->hidden(fn (?User $record, Get $get): bool => (bool) $record?->es_administrador || (bool) $get('cuenta_compartida'))
                     ->columnSpanFull(),
                 Forms\Components\Toggle::make('activo')
                     ->label('Usuario activo')
@@ -91,7 +93,20 @@ class UserResource extends Resource
                 // módulo Usuarios podría darse todos los permisos.
                 Forms\Components\Toggle::make('es_administrador')
                     ->label('Administrador')
-                    ->helperText('Ve todos los módulos y administra la matriz de permisos.')
+                    ->helperText(fn (Get $get): string => $get('cuenta_compartida')
+                        ? 'Una cuenta compartida no puede ser administradora: no se sabe quién está detrás.'
+                        : 'Ve todos los módulos y administra la matriz de permisos.')
+                    ->disabled(fn (Get $get): bool => (bool) $get('cuenta_compartida'))
+                    ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
+                /*
+                 * La usan varias personas de una sede (las de consulta). Quitar la
+                 * marca dejaría de pedir quién la usa, así que, como el
+                 * interruptor de administrador, solo lo ve un administrador.
+                 */
+                Forms\Components\Toggle::make('cuenta_compartida')
+                    ->label('Cuenta compartida')
+                    ->helperText('La usan varias personas de la sede. Pide nombre y documento de quien la usa, queda fija en su sede y se cierra sola tras un rato sin uso.')
+                    ->live()
                     ->visible(fn (): bool => (bool) auth()->user()?->es_administrador),
                 Forms\Components\Placeholder::make('roles')
                     ->label('Roles (grupos en Authentik)')
@@ -124,7 +139,11 @@ class UserResource extends Resource
                     ->label('Roles')
                     ->badge()
                     ->placeholder('—')
-                    ->description(fn (User $record): ?string => $record->es_administrador ? 'Administrador' : null),
+                    ->description(fn (User $record): ?string => match (true) {
+                        $record->es_administrador => 'Administrador',
+                        $record->cuenta_compartida => 'Cuenta compartida',
+                        default => null,
+                    }),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->dateTime('d/m/Y')

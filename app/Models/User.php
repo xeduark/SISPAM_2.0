@@ -28,6 +28,7 @@ class User extends Authenticatable implements FilamentUser, HasName
         'sede_id',
         'activo',
         'es_administrador',
+        'cuenta_compartida',
         'roles',
     ];
 
@@ -47,6 +48,7 @@ class User extends Authenticatable implements FilamentUser, HasName
         'activo',
         'roles',
         'es_administrador',
+        'cuenta_compartida',
     ];
 
     /** Permisos de la matriz ya resueltos, para no consultarlos en cada verificación. */
@@ -73,26 +75,83 @@ class User extends Authenticatable implements FilamentUser, HasName
             'activo' => 'boolean',
             'roles' => 'array',
             'es_administrador' => 'boolean',
+            'cuenta_compartida' => 'boolean',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        /*
+         * Una cuenta compartida nunca es administradora: no se sabe quién
+         * está detrás, y el administrador ve todo y edita la matriz. Se
+         * garantiza aquí y no solo en el formulario, para que ningún camino
+         * (un seeder, tinker, una migración) deje pasar la combinación.
+         */
+        static::saving(function (User $usuario): void {
+            if ($usuario->cuenta_compartida) {
+                $usuario->es_administrador = false;
+            }
+        });
     }
 
     /**
      * Si la matriz de permisos le deja hacer `modulo.accion` (p. ej. «pacientes.crear»).
      * Los roles son los grupos de Authentik; el administrador puede todo.
+     *
+     * Antes que todo, el módulo tiene que estar encendido en esta instalación
+     * (`SISPAM_MODULOS`): uno apagado no existe ni para el administrador.
+     * Como todas las pantallas, recursos, acciones y archivos preguntan aquí,
+     * apagarlo en este sitio lo apaga en todos.
      */
     public function puede(string $permiso): bool
     {
+        [$modulo, $accion] = explode('.', $permiso, 2) + [1 => null];
+
+        if (! Rol::moduloEncendido($modulo)) {
+            return false;
+        }
+
         if ($this->es_administrador) {
             return true;
         }
 
-        [$modulo, $accion] = explode('.', $permiso, 2) + [1 => null];
+        return in_array($accion, $this->permisos()[$modulo] ?? [], true);
+    }
 
-        $this->permisosResueltos ??= Rol::whereIn('nombre', $this->roles ?? [])
+    /**
+     * Si lo único que puede hacer en SISPAM es consultar pacientes en Savia.
+     *
+     * Es el caso del rol CONSULTA. A esa persona el panel la lleva directo a
+     * «Consultar paciente» y no le muestra el Escritorio. Sale de la matriz y
+     * no del nombre del rol: si el administrador le da algo más, vuelve a
+     * tener Escritorio como los demás. Lo de módulos apagados no cuenta: no
+     * lo puede usar.
+     */
+    public function soloPuedeConsultar(): bool
+    {
+        if ($this->es_administrador) {
+            return false;
+        }
+
+        $modulos = array_keys(array_filter(
+            $this->permisos(),
+            fn (?array $acciones, string $modulo): bool => filled($acciones) && Rol::moduloEncendido($modulo),
+            ARRAY_FILTER_USE_BOTH,
+        ));
+
+        return $modulos === ['consultar_paciente'] && $this->puede('consultar_paciente.ver');
+    }
+
+    /**
+     * Los permisos de todos sus roles, sumados: ['pacientes' => ['ver', 'crear'], …].
+     *
+     * @return array<string, list<string>>
+     */
+    private function permisos(): array
+    {
+        return $this->permisosResueltos ??= Rol::whereIn('nombre', $this->roles ?? [])
             ->pluck('permisos')
             ->reduce(fn (array $todos, ?array $permisos): array => array_merge_recursive($todos, $permisos ?? []), []);
-
-        return in_array($accion, $this->permisosResueltos[$modulo] ?? [], true);
     }
 
     /**
@@ -131,6 +190,13 @@ class User extends Authenticatable implements FilamentUser, HasName
      */
     public function sedesDondePuedeTrabajar(): Collection
     {
+        // Una cuenta compartida es la de una sede: la usan varias personas a
+        // la vez y todas tienen que estar en el mismo sitio. Si una la moviera,
+        // las demás quedarían de pronto trabajando en otra sede.
+        if ($this->cuenta_compartida) {
+            return Sede::query()->whereKey($this->sede_id)->get();
+        }
+
         if ($this->es_administrador) {
             return Sede::query()->where('activa', true)->orderBy('nombre')->get();
         }

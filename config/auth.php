@@ -114,4 +114,22 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Cuentas compartidas (users.cuenta_compartida)
+    |--------------------------------------------------------------------------
+    |
+    | Minutos sin uso tras los cuales la sesión de una cuenta compartida se
+    | cierra sola, también en Authentik. Quedan abiertas en equipos que usa
+    | más de una persona. Las cuentas personales siguen con SESSION_LIFETIME.
+    |
+    | El `?:` es a propósito: una variable vacía en el .env daría 0 y
+    | cerraría la sesión en cada clic.
+    |
+    */
+
+    'cuenta_compartida' => [
+        'minutos_sin_uso' => (int) (env('CUENTA_COMPARTIDA_MINUTOS_SIN_USO') ?: 30),
+    ],
+
 ];
