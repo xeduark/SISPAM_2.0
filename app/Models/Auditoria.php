@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Factories\AuditoriaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -56,7 +55,13 @@ class Auditoria extends Model
     /** El cierre del día venció los tickets que nadie alcanzó a atender. */
     public const ACCION_CERRO_DIA = 'cerro_dia';
 
-    /** Alguien dijo quién es antes de usar una cuenta compartida. */
+    /**
+     * Alguien dijo quién es antes de usar una cuenta compartida.
+     *
+     * Solo para las líneas viejas: desde la v1.0.1 las cuentas compartidas
+     * ya no piden nombre ni documento. Se conserva para que esas líneas se
+     * sigan leyendo con su etiqueta.
+     */
     public const ACCION_SE_IDENTIFICO = 'se_identifico';
 
     /** Una cuenta compartida llevaba demasiado tiempo sin uso y se cerró sola. */
@@ -150,9 +155,9 @@ class Auditoria extends Model
      * de quien lo ejecuta —el cierre del día, por ejemplo, que lo corre una
      * tarea programada sin usuario y cierra sede por sede.
      *
-     * Con una cuenta compartida, además de la cuenta queda la persona que
-     * dijo estar usándola (`QuienUsaLaCuenta`). Se toma sola: nadie que
-     * registre algo tiene que acordarse de pasarla.
+     * `persona_nombre` y `persona_documento` ya no se llenan: eran de quien
+     * decía estar usando una cuenta compartida, algo que se pidió hasta la
+     * v1.0.0. Las columnas se quedan para que las líneas viejas se sigan viendo.
      *
      * @param  array<string, array{0: mixed, 1: mixed}>|null  $cambios
      */
@@ -167,14 +172,11 @@ class Auditoria extends Model
     ): ?self {
         try {
             $usuario ??= auth()->user();
-            $persona = QuienUsaLaCuenta::persona($usuario);
 
             return static::create([
                 'usuario_id' => $usuario?->getKey(),
                 'usuario_nombre' => $usuario?->nombre_completo ?? 'Sistema',
                 'usuario_documento' => $usuario?->documento,
-                'persona_nombre' => $persona['nombre'] ?? null,
-                'persona_documento' => $persona['documento'] ?? null,
                 'sede_id' => $sedeId ?? $usuario?->sede_id,
                 'accion' => $accion,
                 'entidad_tipo' => $entidadTipo,

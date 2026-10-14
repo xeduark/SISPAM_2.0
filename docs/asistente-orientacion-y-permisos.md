@@ -303,10 +303,30 @@ y no entran a nada más.
   **solo un administrador**, igual que el interruptor de administrador, y en
   el listado sale «Cuenta compartida» debajo de los roles.
 
+### Siempre el rol CONSULTA, y solo ese
+
+- **Venga o no el grupo desde Authentik.** El inicio de sesión copia los
+  grupos de Authentik a `users.roles`; para una cuenta compartida,
+  `User::booted()` deja siempre `['CONSULTA']`. Si alguien la mete en otro
+  grupo allá, no gana permisos; si no está en el grupo CONSULTA, igual lo tiene.
+- `User::rolesEfectivos()` lo vuelve a imponer al resolver los permisos, por
+  si alguien tocó la fila directo en la base.
+- **Lo que pueden hacer se ajusta en la matriz, en el rol CONSULTA**: lo que se
+  le dé a ese rol lo tienen las cuatro cuentas.
+- **En Usuarios, el campo Roles queda fijo en CONSULTA** y no se puede cambiar.
+  Al guardar, SISPAM les asigna ese grupo en Authentik, como con cualquier rol.
+  Marcar a alguien como cuenta compartida le deja solo CONSULTA.
+- Antes de la v1.0.1 dependía del grupo en Authentik, y en producción las
+  cuentas entraron sin rol: llegaban al Escritorio vacío. La migración
+  `2026_10_14_100000_cuentas_compartidas_con_rol_consulta` arregló las que ya
+  existían.
+
 ### Qué ve
 
-- **En el menú, solo «Consultar paciente»**. Al entrar al panel llega directo
-  ahí, no al Escritorio.
+- **Al iniciar sesión, lo primero y lo único es «Consultar paciente»**, aunque
+  antes hubiera abierto otra dirección. El Escritorio no le sale, ni siquiera
+  si la matriz le da más al rol CONSULTA, y `/admin` la devuelve a Consultar
+  paciente.
 - **Lo básico de Savia:** nombre, documento, fecha de nacimiento, estado de la
   afiliación con su causa, régimen e IPS primaria (`ConsultarPaciente::CAMPOS_BASICOS`,
   lista blanca). Lo demás se quita **en el servidor**: lo que está en una
@@ -326,34 +346,19 @@ pronto trabajando en otra sede.
 
 **Nunca es administradora:** `User::booted()` lo garantiza al guardar.
 
-### Quién consultó
+### Qué queda en la auditoría
 
-1. Al entrar, la persona llega a **«¿Quién está usando esta cuenta?»**
-   (`/admin/identificarse`) y escribe su nombre y su documento.
-   `ExigirQuienUsaLaCuenta` la trae aquí desde cualquier pantalla hasta que
-   responda. Se pide **una vez por sesión**: se olvida al iniciar sesión, al
-   cerrarla y al cerrarse por inactividad.
-2. `ConsultarPaciente::buscar()` lo vuelve a comprobar: un método de Livewire
-   se puede llamar sin pasar por la pantalla.
-3. **Cada línea de la auditoría** de esa sesión lleva la cuenta, la sede y la
-   persona (`auditorias.persona_nombre` y `persona_documento`).
-   `Auditoria::registrar()` la toma sola de la sesión (`QuienUsaLaCuenta`).
-   Queda además una línea «Se identificó».
-4. En Consultar paciente, la persona ve «Las consultas quedan a nombre de …» y
-   un botón **«Cambiar de persona»**. Así, si alguien dejó el equipo abierto,
-   quien llega no consulta a nombre ajeno sin darse cuenta.
+**Cada consulta queda con la cuenta y la sede.** En Administración →
+Auditoría, debajo de la cuenta sale «ConsultaPRP · cuenta compartida», y el
+filtro **«Solo cuentas compartidas»** deja solo esas cuentas.
 
-El dato vive en la sesión y no en la base: en otro equipo, otra persona puede
-estar usando la misma cuenta al mismo tiempo. Se usa solo para la auditoría,
-y no se comprueba contra nada: es la palabra de quien lo escribe, con la IP y
-el navegador desde donde lo dijo.
-
-**En Administración → Auditoría** la persona va dentro de la columna
-Usuario: debajo de la cuenta sale «ConsultaPRP · cuenta compartida» y
-«Persona: nombre · documento». Buscar por el nombre o el documento de la
-persona la encuentra, el filtro **«Solo cuentas compartidas»** deja solo esas
-cuentas, y la ficha de cada línea tiene la sección «Persona que usaba la
-cuenta».
+**Desde la v1.0.1 ya no se pide nombre ni documento** a quien usa la cuenta:
+se quitaron la pantalla «¿Quién está usando esta cuenta?», su middleware y el
+servicio que lo guardaba en la sesión. Las líneas de hasta la v1.0.0 traen
+esa persona (`auditorias.persona_nombre` y `persona_documento`) y **se siguen
+viendo**: «Persona: nombre · documento» debajo de la cuenta, la búsqueda las
+encuentra y su ficha tiene la sección «Persona que usaba la cuenta». Las
+columnas no se borran; simplemente ya no se llenan.
 
 ### Se cierra sola a los 30 minutos sin uso
 
@@ -380,7 +385,6 @@ pantalla o consultar.
 `sessions`, una por navegador. `AuthenticateSession` solo cierra las demás si
 cambia la contraseña, y aquí es nula. No se usa «recordarme» y nada llama a
 `logoutOtherDevices()`. Cerrar sesión en un equipo invalida solo esa sesión.
-La prueba `test_dos_personas_usan_la_misma_cuenta_a_la_vez_…` lo cubre.
 
 **En Authentik, revisa:**
 
@@ -398,41 +402,45 @@ La prueba `test_dos_personas_usan_la_misma_cuenta_a_la_vez_…` lo cubre.
 - **El *invalidation flow* del proveedor de SISPAM:** para que cerrar sesión
   (a mano o por inactividad) cierre también Authentik en ese equipo, el flujo
   tiene que incluir el stage *User Logout*. Si solo cierra la sesión de la
-  aplicación, el siguiente en ese equipo entra con un clic y sin contraseña
-  (aunque igual tiene que decir quién es).
+  aplicación, el siguiente en ese equipo entra con un clic y sin contraseña.
 
 ### Crearlas en Authentik
 
-1. **Directory → Groups → Create:** nombre `CONSULTA`, en mayúsculas, igual
-   al rol.
-2. **Directory → Users → Create**, una por sede: username `ConsultaPRP`
+**Con `AUTHENTIK_API_TOKEN` configurado**, SISPAM lo hace: abre cada cuenta en
+Usuarios y guárdala (le crea la cuenta en Authentik si no la tiene, con el
+grupo `CONSULTA`), y ponle la contraseña con **«Cambiar contraseña»**. Una
+distinta por sede.
+
+**Sin token**, a mano en Authentik:
+
+1. **Directory → Users → Create**, una por sede: username `ConsultaPRP`
    (y `ConsultaBIC`, `ConsultaL30`, `ConsultaAVT`), nombre «Consulta PREMIUM
    PLAZA», tipo *Internal*. Luego **Set password** con la contraseña que se
    le va a dar a la sede.
-3. En cada usuario, pestaña **Groups → Add to existing group → `CONSULTA`**.
-4. Si la aplicación de SISPAM en Authentik tiene políticas que limitan quién
-   entra por grupo, agrega `CONSULTA`.
-5. Revisa la lista de arriba («En Authentik, revisa»).
+2. El grupo `CONSULTA` ya no hace falta para entrar: en SISPAM lo tienen
+   siempre. Si quieres que Authentik también lo muestre, agrégalas a ese grupo.
+3. Si la aplicación de SISPAM en Authentik limita quién entra por grupo,
+   agrega `CONSULTA` y mete ahí las cuatro cuentas.
+4. Revisa la lista de arriba («En Authentik, revisa»).
 
 ### Puesta en marcha
 
 ```bash
-php artisan migrate                                  # cuenta_compartida, persona_* y ver_completo
+php artisan migrate                                  # cuenta_compartida, ver_completo y el rol de las que ya existían
 php artisan db:seed --class=CuentasDeConsultaSeeder  # rol CONSULTA y las 4 cuentas
 ```
 
 ### Probarlo
 
-1. En una ventana privada, entra a `/admin` con `ConsultaPRP`. Llegas a
-   «¿Quién está usando esta cuenta?». Escribe un nombre y un documento.
-2. Llegas a Consultar paciente. En el menú no hay nada más, y arriba no está
-   el selector de sede. Consulta una cédula: ves lo básico, el estado en
-   SISPAM y ningún botón.
+1. En una ventana privada, entra a `/admin` con `ConsultaPRP`. Llegas directo
+   a Consultar paciente, sin preguntas y sin Escritorio.
+2. En el menú no hay nada más, y arriba no está el selector de sede. Consulta
+   una cédula: ves lo básico, el estado en SISPAM y ningún botón.
 3. Escribe a mano `/admin/pacientes` o `/admin`: la primera responde 403 y la
    segunda vuelve a Consultar paciente.
-4. En otro navegador o equipo entra con la misma cuenta y otra persona.
-   Consulten los dos. Como administrador, en **Administración → Auditoría**
-   cada consulta sale con su persona.
+4. Como administrador, en **Usuarios** abre `ConsultaPRP`: el campo Roles dice
+   CONSULTA y no se puede cambiar. En **Administración → Auditoría** la
+   consulta del paso 2 sale con la cuenta y la sede.
 5. Para probar el cierre sin esperar media hora, pon
    `CUENTA_COMPARTIDA_MINUTOS_SIN_USO=1` en el `.env`, corre
    `php artisan config:clear` y deja la pantalla quieta un minuto. Al
@@ -442,12 +450,10 @@ php artisan db:seed --class=CuentasDeConsultaSeeder  # rol CONSULTA y las 4 cuen
 
 ### Archivos
 
-- `app/Filament/Pages/Identificarse.php` y su vista: «¿Quién está usando esta cuenta?».
-- `app/Filament/Pages/Dashboard.php`: el Escritorio, que manda a Consultar paciente a quien solo consulta.
-- `app/Http/Middleware/ExigirQuienUsaLaCuenta.php` y `CerrarCuentaCompartidaInactiva.php`.
-- `app/Services/CuentaCompartida/QuienUsaLaCuenta.php`: la persona en la sesión.
-- `resources/views/filament/cuenta-compartida/cierre-por-inactividad.blade.php`: el reloj del navegador.
-- `database/migrations/2026_10_13_100000_cuentas_compartidas.php` y `2026_10_13_110000_ver_todo_lo_de_savia.php`.
+- `app/Models/User.php`: `booted()` (siempre CONSULTA, nunca administradora) y `rolesEfectivos()`.
+- `app/Filament/Pages/Dashboard.php`: el Escritorio, que manda a Consultar paciente a las cuentas compartidas y a quien solo consulta.
+- `app/Http/Middleware/CerrarCuentaCompartidaInactiva.php` y `resources/views/filament/cuenta-compartida/cierre-por-inactividad.blade.php`: los dos relojes de inactividad.
+- `database/migrations/2026_10_13_100000_cuentas_compartidas.php`, `2026_10_13_110000_ver_todo_lo_de_savia.php` y `2026_10_14_100000_cuentas_compartidas_con_rol_consulta.php`.
 - `database/seeders/CuentasDeConsultaSeeder.php`.
 - `tests/Feature/CuentasCompartidas/`.
 

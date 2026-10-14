@@ -157,25 +157,33 @@ hace falta que la IP del equipo esté autorizada por Savia.
 ## Cuentas compartidas (rol CONSULTA)
 - Cuatro cuentas, una por sede, que usan varias personas a la vez para **consultar en
   Savia y nada más**: `ConsultaPRP`, `ConsultaBIC`, `ConsultaL30`, `ConsultaAVT` (el
-  documento es el username en Authentik). Grupo/rol `CONSULTA`: solo `consultar_paciente.ver`.
+  documento es el username en Authentik). Rol `CONSULTA` (`Rol::CONSULTA`): solo `consultar_paciente.ver`.
 - Se crean con `php artisan db:seed --class=CuentasDeConsultaSeeder` (llama a `RolSeeder`;
   se puede volver a correr). Se marcan con `users.cuenta_compartida`, que solo cambia un administrador.
+- **Siempre tienen el rol CONSULTA, y solo ese**, venga o no el grupo desde Authentik:
+  `User::booted()` lo impone al guardar (también cuando el inicio de sesión copia los
+  grupos) y `User::rolesEfectivos()` al resolver permisos, por si la fila se tocó a mano.
+  Otro grupo en Authentik no les da más permisos. Lo que pueden hacer se ajusta en la
+  matriz, en el rol CONSULTA. En Usuarios el campo Roles queda fijo y, al guardar, SISPAM
+  les asigna el grupo CONSULTA en Authentik. La migración
+  `2026_10_14_100000_cuentas_compartidas_con_rol_consulta` arregló las que ya existían.
 - **Ven lo básico** (`ConsultarPaciente::CAMPOS_BASICOS`): identificación, estado, régimen e
   IPS primaria. El resto se quita en el servidor, porque el estado de Livewire viaja al
   navegador. Lo completo es `consultar_paciente.ver_completo`; la migración
   `2026_10_13_110000_ver_todo_lo_de_savia` se lo dio a todo rol que ya consultaba.
-- Solo ven «Consultar paciente»: `/admin` las lleva ahí (`App\Filament\Pages\Dashboard`,
+- **Al iniciar sesión, lo primero y lo único es «Consultar paciente»**: el callback de
+  Authentik las manda ahí sin importar la dirección que hubieran abierto antes, el
+  Escritorio no les sale (`App\Filament\Pages\Dashboard`, también para quien
   `User::soloPuedeConsultar()`) y todo lo demás responde 403. Sin botones de registrar,
   actualizar ni ver ficha.
-- **Quién consultó:** antes de trabajar, la persona escribe nombre y documento
-  (`/admin/identificarse`, middleware `ExigirQuienUsaLaCuenta`). Va en la sesión
-  (`QuienUsaLaCuenta`), una vez por sesión, y `Auditoria::registrar()` lo pone solo en
-  cada línea (`persona_nombre`, `persona_documento`). Solo para la auditoría.
+- **Ya no piden nombre ni documento** (desde la v1.0.1). Cada consulta queda en la
+  auditoría con la cuenta y la sede. Las líneas viejas con `persona_nombre` y
+  `persona_documento` se siguen viendo; las columnas no se borran.
 - **Fija en su sede** (sin selector, aunque le asignen otras) y **nunca administradora**.
 - **Se cierra sola a los 30 minutos sin uso**, también en Authentik: reloj en el navegador
-  y garantía en el servidor (`CerrarCuentaCompartidaInactiva`). `CUENTA_COMPARTIDA_MINUTOS_SIN_USO`.
-- Los dos middleware son `authMiddleware(..., isPersistent: true)`: corren también en
-  `/livewire/update`, porque consultar es una petición de Livewire.
+  y garantía en el servidor (`CerrarCuentaCompartidaInactiva`, un `authMiddleware(...,
+  isPersistent: true)` para que corra también en `/livewire/update`).
+  `CUENTA_COMPARTIDA_MINUTOS_SIN_USO`.
 - Detalle, pasos en Authentik y cómo probarlo: `docs/asistente-orientacion-y-permisos.md` (sección 5).
 
 ## Producción
@@ -201,7 +209,14 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - **Base nueva:** `migrate --force` y los seeders `SedeSeeder`, `AdminUserSeeder` y
   `CuentasDeConsultaSeeder` (incluye `RolSeeder`). Nunca `db:seed` a secas (trae
   `ColaSeeder`) ni `DemoProcesoSeeder`, que además se niega a correr en producción.
-- Actualizar: `scripts/desplegar.sh <etiqueta>`. Copia de la base: `scripts/respaldar-base.sh`.
+- Actualizar: `scripts/desplegar.sh <etiqueta>`, o sin git con un paquete de
+  `git archive` (`docs/despliegue.md`, sección 5.2). Copia de la base: `scripts/respaldar-base.sh`.
+- **Savia de producción**: las direcciones van en `.env.production.example` (la del token,
+  por confirmar con Savia); las credenciales solo en el `.env` del servidor, y después
+  `php artisan optimize`. **`php artisan savia:probar [documento] [--tipo=CC]`** pide un
+  token nuevo y, con documento, dice si lo encontró y el código, nunca datos del afiliado;
+  esa consulta queda en la auditoría a nombre de «Sistema» (`App\Console\Commands\ProbarSavia`).
+- El Escritorio no tiene el recuadro de Filament (versión, documentación, GitHub).
 - Pruebas: `tests/Feature/Produccion/`. El recorrido de todas las rutas del panel está en
   el trait `Tests\Concerns\RecorreElPanel`.
 
@@ -216,8 +231,9 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - Auditar un modelo: `use Auditable;` + `CAMPOS_AUDITADOS` + `ETIQUETA_AUDITORIA`.
   Registrar algo que no es un cambio de modelo: `Auditoria::registrar(...)`.
 - Nadie crea, edita ni borra auditorías desde la pantalla, ni el administrador.
-- Con una **cuenta compartida**, cada línea lleva también a la persona que dijo usarla
-  (`persona_nombre`, `persona_documento`); en la pantalla va debajo de la cuenta.
+- Con una **cuenta compartida**, la pantalla lo dice debajo de la cuenta. Hasta la v1.0.0
+  se guardaba además la persona que dijo usarla (`persona_nombre`, `persona_documento`):
+  ya no se llena, pero esas líneas se siguen viendo.
 - **Orden médica:** `soportes/{soporte}/orden-medica` sirve el archivo desde el disco
   privado. Exige sesión y el permiso `orientacion.ver_orden`; cada acceso se audita.
   Se llega desde la sección «Órdenes médicas» de la ficha del paciente.

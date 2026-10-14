@@ -13,8 +13,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Cierra la sesión de una cuenta compartida tras un rato sin uso.
  *
  * Estas cuentas quedan abiertas en equipos que usa más de una persona. Si la
- * sesión no se cerrara, quien llegue después consultaría a nombre de quien se
- * identificó antes, y el último paciente consultado seguiría a la vista.
+ * sesión no se cerrara, el último paciente consultado seguiría a la vista y
+ * cualquiera que pasara por el equipo podría seguir consultando.
  *
  * ## Dos relojes que miden lo mismo
  *
@@ -101,7 +101,7 @@ final class CerrarCuentaCompartidaInactiva
         // Queda en la sesión nueva: se ve al volver a la pantalla de ingreso.
         Notification::make()
             ->title('La sesión se cerró por inactividad')
-            ->body('Pasaron '.self::minutos().' minutos sin uso. Vuelve a iniciar sesión y a decir quién eres.')
+            ->body('Pasaron '.self::minutos().' minutos sin uso. Vuelve a iniciar sesión.')
             ->warning()
             ->persistent()
             ->send();

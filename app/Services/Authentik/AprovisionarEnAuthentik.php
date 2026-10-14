@@ -308,6 +308,12 @@ class AprovisionarEnAuthentik
      */
     private function recordarRoles(User $usuario, array $roles): void
     {
+        // Una cuenta compartida tiene CONSULTA y nada más, aunque allá tenga
+        // otros grupos (`User::booted()`).
+        if ($usuario->cuenta_compartida) {
+            return;
+        }
+
         $todos = array_values(array_unique([...((array) $usuario->roles), ...$roles]));
 
         if ($todos !== (array) $usuario->roles) {

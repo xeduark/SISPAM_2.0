@@ -7,7 +7,6 @@ use App\Filament\Resources\RolResource\Pages\ManageRoles;
 use App\Models\Rol;
 use App\Models\Sede;
 use App\Models\User;
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Seeders\RolSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -129,7 +128,6 @@ class ModulosApagadosTest extends TestCase
             'cuenta_compartida' => true,
             'sede_id' => $this->sede->id,
         ]));
-        session([QuienUsaLaCuenta::SESION => ['nombre' => 'Ana Pérez', 'documento' => '43123456']]);
 
         $this->get('/admin')->assertRedirect(ConsultarPaciente::getUrl());
         $this->consultar()->assertSee('JUAN JOSE RAMIREZ PULGARIN');

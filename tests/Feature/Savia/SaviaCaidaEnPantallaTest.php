@@ -5,7 +5,6 @@ namespace Tests\Feature\Savia;
 use App\Filament\Pages\ConsultarPaciente;
 use App\Models\Sede;
 use App\Models\User;
-use App\Services\CuentaCompartida\QuienUsaLaCuenta;
 use Database\Seeders\RolSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -59,7 +58,6 @@ class SaviaCaidaEnPantallaTest extends TestCase
             'cuenta_compartida' => true,
             'sede_id' => Sede::factory()->create()->id,
         ]));
-        session([QuienUsaLaCuenta::SESION => ['nombre' => 'Ana Pérez', 'documento' => '43123456']]);
 
         $this->consultar()
             ->assertSee('Savia no respondió')
