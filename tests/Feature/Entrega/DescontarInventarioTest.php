@@ -392,18 +392,164 @@ class DescontarInventarioTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ *
-     *  Domicilios (documentan comportamiento actual, sin cambiarlo)
+     *  D1–D10: despacho legítimo vs transiciones solo logísticas
      * ------------------------------------------------------------------ */
 
-    public function test_d1_domicilio_despacha_descuento_al_registrar_la_atencion(): void
+    /**
+     * @return array{0: Sede, 1: User}
+     */
+    private function sedeYUsuarioDispensador(): array
     {
-        $this->configurarApi();
-        Queue::fake();
-
         $sede = Sede::factory()->create(['codigo' => 'CEN', 'activa' => true]);
         $usuario = User::factory()->administrador()->create(['sede_id' => $sede->id]);
         $this->actingAs($usuario);
 
+        return [$sede, $usuario];
+    }
+
+    private function avanzarDomicilioHastaEnRuta(DomicilioEnvio $envio, User $usuario): DomicilioEnvio
+    {
+        $registrar = app(RegistrarEntrega::class);
+        foreach ([
+            DomicilioEnvio::ESTADO_PREPARADO,
+            DomicilioEnvio::ESTADO_ENVIADO_DOMINA,
+            DomicilioEnvio::ESTADO_EN_RUTA,
+        ] as $estado) {
+            $envio = $registrar->cambiarEstadoDomicilio($envio->fresh(), $estado, $usuario);
+        }
+
+        return $envio;
+    }
+
+    public function test_d1_entrega_presencial_nueva_genera_descuento(): void
+    {
+        $this->configurarApi();
+        Queue::fake();
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
+        $ticket = $this->ticketListo($sede, $usuario, [
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 5, 'unidad' => 'TAB'],
+        ]);
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+
+        app(RegistrarEntrega::class)->handle($dto, $usuario, [
+            'tipo' => Entrega::TIPO_PRESENCIAL,
+            'sede_id' => $sede->id,
+            'firma_contenido' => 'data:image/png;base64,'.base64_encode('firma'),
+            'receptor_nombre' => 'Paciente Prueba',
+            'receptor_documento' => '123',
+            'receptor_parentesco' => 'Paciente',
+            'items' => [[
+                'ticket_item_id' => $dto->items[0]->id,
+                'codigo' => 'MED-001',
+                'nombre' => 'A',
+                'cantidad_solicitada' => 5,
+                'unidad' => 'TAB',
+                'cantidad_entregada' => 5,
+                'resultado' => EntregaItem::RESULTADO_ENTREGADO,
+            ]],
+        ]);
+
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, 1);
+    }
+
+    public function test_d2_entrega_parcial_nueva_descuenta_solo_lo_entregado(): void
+    {
+        $this->configurarApi();
+        Http::fake(['inventario.test/api/dispensaciones' => Http::response(['referencia' => 'ok', 'items' => []], 201)]);
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
+        $ticket = $this->ticketListo($sede, $usuario, [
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 10, 'unidad' => 'TAB'],
+        ]);
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+
+        $entrega = app(RegistrarEntrega::class)->handle($dto, $usuario, [
+            'tipo' => Entrega::TIPO_PRESENCIAL,
+            'sede_id' => $sede->id,
+            'firma_contenido' => 'data:image/png;base64,'.base64_encode('firma'),
+            'receptor_nombre' => 'Paciente Prueba',
+            'receptor_documento' => '123',
+            'receptor_parentesco' => 'Paciente',
+            'items' => [[
+                'ticket_item_id' => $dto->items[0]->id,
+                'codigo' => 'MED-001',
+                'nombre' => 'A',
+                'cantidad_solicitada' => 10,
+                'unidad' => 'TAB',
+                'cantidad_entregada' => 4,
+                'resultado' => EntregaItem::RESULTADO_PARCIAL,
+                'motivo' => 'Faltante en bodega',
+            ]],
+        ]);
+
+        $this->assertSame(Entrega::ESTADO_PARCIAL, $entrega->fresh()->estado);
+        Http::assertSentCount(1);
+        Http::assertSent(fn (Request $r) => $r['referencia'] === 'ENTREGA-'.$entrega->id
+            && $r['items'] === [['codigo' => 'MED-001', 'presentaciones' => 4]]);
+    }
+
+    public function test_d3_segunda_atencion_legitima_genera_otro_descuento_con_otra_referencia(): void
+    {
+        $this->configurarApi();
+        Queue::fake();
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
+        $ticket = $this->ticketListo($sede, $usuario, [
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 10, 'unidad' => 'TAB'],
+        ]);
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+
+        $primera = app(RegistrarEntrega::class)->handle($dto, $usuario, [
+            'tipo' => Entrega::TIPO_PRESENCIAL,
+            'sede_id' => $sede->id,
+            'firma_contenido' => 'data:image/png;base64,'.base64_encode('firma1'),
+            'receptor_nombre' => 'Paciente Prueba',
+            'receptor_documento' => '123',
+            'receptor_parentesco' => 'Paciente',
+            'items' => [[
+                'ticket_item_id' => $dto->items[0]->id,
+                'codigo' => 'MED-001',
+                'nombre' => 'A',
+                'cantidad_solicitada' => 10,
+                'unidad' => 'TAB',
+                'cantidad_entregada' => 6,
+                'resultado' => EntregaItem::RESULTADO_PARCIAL,
+                'motivo' => 'Parcial',
+            ]],
+        ]);
+
+        $dto2 = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+        $segunda = app(RegistrarEntrega::class)->handle($dto2, $usuario, [
+            'tipo' => Entrega::TIPO_PRESENCIAL,
+            'sede_id' => $sede->id,
+            'firma_contenido' => 'data:image/png;base64,'.base64_encode('firma2'),
+            'receptor_nombre' => 'Paciente Prueba',
+            'receptor_documento' => '123',
+            'receptor_parentesco' => 'Paciente',
+            'items' => [[
+                'ticket_item_id' => $dto2->items[0]->id,
+                'codigo' => 'MED-001',
+                'nombre' => 'A',
+                'cantidad_solicitada' => 4,
+                'unidad' => 'TAB',
+                'cantidad_entregada' => 4,
+                'resultado' => EntregaItem::RESULTADO_ENTREGADO,
+            ]],
+        ]);
+
+        $this->assertNotSame($primera->id, $segunda->id);
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, 2);
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, fn (DescontarInventarioDeEntrega $job): bool => (int) $job->entrega->getKey() === (int) $primera->id);
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, fn (DescontarInventarioDeEntrega $job): bool => (int) $job->entrega->getKey() === (int) $segunda->id);
+    }
+
+    public function test_d4_domicilio_registrado_mantiene_el_disparo_del_descuento(): void
+    {
+        $this->configurarApi();
+        Queue::fake();
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
         $ticket = $this->ticketListo($sede, $usuario, [
             ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 10, 'unidad' => 'TAB'],
         ]);
@@ -426,15 +572,94 @@ class DescontarInventarioTest extends TestCase
         Queue::assertPushed(DescontarInventarioDeEntrega::class, 1);
     }
 
-    public function test_d2_confirmar_domina_entregado_no_vuelve_a_despachar_si_estado_no_cambia(): void
+    public function test_d5_domicilio_no_entregado_no_vuelve_a_despachar(): void
     {
         $this->configurarApi();
         Queue::fake();
 
-        $sede = Sede::factory()->create(['codigo' => 'CEN', 'activa' => true]);
-        $usuario = User::factory()->administrador()->create(['sede_id' => $sede->id]);
-        $this->actingAs($usuario);
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
+        $ticket = $this->ticketListo($sede, $usuario, [
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 4, 'unidad' => 'TAB'],
+        ]);
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
 
+        $entrega = app(RegistrarEntrega::class)->handle($dto, $usuario, [
+            'tipo' => Entrega::TIPO_DOMICILIO,
+            'sede_id' => $sede->id,
+            'items' => [[
+                'ticket_item_id' => $dto->items[0]->id,
+                'codigo' => 'MED-001',
+                'nombre' => 'A',
+                'cantidad_solicitada' => 4,
+                'unidad' => 'TAB',
+                'cantidad_entregada' => 4,
+                'resultado' => EntregaItem::RESULTADO_ENTREGADO,
+            ]],
+        ]);
+
+        $this->assertSame(Entrega::ESTADO_COMPLETADA, $entrega->fresh()->estado);
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, 1);
+
+        $envio = $this->avanzarDomicilioHastaEnRuta($entrega->domicilioEnvio, $usuario);
+
+        Queue::fake();
+        app(RegistrarEntrega::class)->cambiarEstadoDomicilio(
+            $envio->fresh(),
+            DomicilioEnvio::ESTADO_NO_ENTREGADO,
+            $usuario,
+            nota: 'No había nadie',
+        );
+
+        $this->assertSame(Entrega::ESTADO_PARCIAL, $entrega->fresh()->estado);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_d6_domicilio_con_novedad_no_vuelve_a_descontar(): void
+    {
+        $this->configurarApi();
+        Queue::fake();
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
+        $ticket = $this->ticketListo($sede, $usuario, [
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 4, 'unidad' => 'TAB'],
+        ]);
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+
+        $entrega = app(RegistrarEntrega::class)->handle($dto, $usuario, [
+            'tipo' => Entrega::TIPO_DOMICILIO,
+            'sede_id' => $sede->id,
+            'items' => [[
+                'ticket_item_id' => $dto->items[0]->id,
+                'codigo' => 'MED-001',
+                'nombre' => 'A',
+                'cantidad_solicitada' => 4,
+                'unidad' => 'TAB',
+                'cantidad_entregada' => 4,
+                'resultado' => EntregaItem::RESULTADO_ENTREGADO,
+            ]],
+        ]);
+
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, 1);
+        $envio = $this->avanzarDomicilioHastaEnRuta($entrega->domicilioEnvio, $usuario);
+
+        Queue::fake();
+        app(RegistrarEntrega::class)->cambiarEstadoDomicilio(
+            $envio->fresh(),
+            DomicilioEnvio::ESTADO_NOVEDAD,
+            $usuario,
+            novedadDetalle: 'Dirección incorrecta',
+        );
+
+        $this->assertSame(Entrega::ESTADO_PARCIAL, $entrega->fresh()->estado);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_d7_reprogramacion_del_mismo_envio_no_genera_segundo_descuento(): void
+    {
+        $this->configurarApi();
+        Queue::fake();
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
         $ticket = $this->ticketListo($sede, $usuario, [
             ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 4, 'unidad' => 'TAB'],
         ]);
@@ -456,32 +681,30 @@ class DescontarInventarioTest extends TestCase
 
         Queue::assertPushed(DescontarInventarioDeEntrega::class, 1);
 
-        $envio = $entrega->domicilioEnvio;
         $registrar = app(RegistrarEntrega::class);
-        foreach ([
-            DomicilioEnvio::ESTADO_PREPARADO,
-            DomicilioEnvio::ESTADO_ENVIADO_DOMINA,
-            DomicilioEnvio::ESTADO_EN_RUTA,
-        ] as $estado) {
-            $envio = $registrar->cambiarEstadoDomicilio($envio->fresh(), $estado, $usuario);
-        }
+        $envio = $this->avanzarDomicilioHastaEnRuta($entrega->domicilioEnvio, $usuario);
+        $envio = $registrar->cambiarEstadoDomicilio(
+            $envio->fresh(),
+            DomicilioEnvio::ESTADO_NO_ENTREGADO,
+            $usuario,
+            nota: 'Ausente',
+        );
 
         Queue::fake();
-        $registrar->cambiarEstadoDomicilio($envio->fresh(), DomicilioEnvio::ESTADO_ENTREGADO, $usuario);
+        // Misma Entrega / mismo envío: reabrir logística no es una nueva dispensación.
+        $envio = $registrar->cambiarEstadoDomicilio($envio->fresh(), DomicilioEnvio::ESTADO_PREPARADO, $usuario);
+        $envio = $registrar->cambiarEstadoDomicilio($envio->fresh(), DomicilioEnvio::ESTADO_ENVIADO_DOMINA, $usuario);
+        $registrar->cambiarEstadoDomicilio($envio->fresh(), DomicilioEnvio::ESTADO_EN_RUTA, $usuario);
 
-        // recalcularEstado deja la entrega en completada otra vez: wasChanged('estado') = false.
         Queue::assertNothingPushed();
     }
 
-    public function test_d3_no_entregado_desde_completada_puede_volver_a_despachar_misma_entrega(): void
+    public function test_d8_confirmar_domicilio_entregado_no_genera_descuento_adicional(): void
     {
         $this->configurarApi();
         Queue::fake();
 
-        $sede = Sede::factory()->create(['codigo' => 'CEN', 'activa' => true]);
-        $usuario = User::factory()->administrador()->create(['sede_id' => $sede->id]);
-        $this->actingAs($usuario);
-
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
         $ticket = $this->ticketListo($sede, $usuario, [
             ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 4, 'unidad' => 'TAB'],
         ]);
@@ -501,29 +724,81 @@ class DescontarInventarioTest extends TestCase
             ]],
         ]);
 
-        $this->assertSame(Entrega::ESTADO_COMPLETADA, $entrega->fresh()->estado);
-
-        $envio = $entrega->domicilioEnvio;
-        $registrar = app(RegistrarEntrega::class);
-        foreach ([
-            DomicilioEnvio::ESTADO_PREPARADO,
-            DomicilioEnvio::ESTADO_ENVIADO_DOMINA,
-            DomicilioEnvio::ESTADO_EN_RUTA,
-        ] as $estado) {
-            $envio = $registrar->cambiarEstadoDomicilio($envio->fresh(), $estado, $usuario);
-        }
+        Queue::assertPushed(DescontarInventarioDeEntrega::class, 1);
+        $envio = $this->avanzarDomicilioHastaEnRuta($entrega->domicilioEnvio, $usuario);
 
         Queue::fake();
-        $registrar->cambiarEstadoDomicilio(
+        app(RegistrarEntrega::class)->cambiarEstadoDomicilio(
             $envio->fresh(),
-            DomicilioEnvio::ESTADO_NO_ENTREGADO,
+            DomicilioEnvio::ESTADO_ENTREGADO,
             $usuario,
-            nota: 'No había nadie',
         );
 
-        // completada → parcial dispara otra vez el job con la misma Entrega (misma referencia ENTREGA-{id}).
-        Queue::assertPushed(DescontarInventarioDeEntrega::class, function (DescontarInventarioDeEntrega $job) use ($entrega): bool {
-            return (int) $job->entrega->getKey() === (int) $entrega->id;
-        });
+        Queue::assertNothingPushed();
+    }
+
+    public function test_d9_fallo_de_api_conserva_reintentos_del_job(): void
+    {
+        $this->configurarApi();
+        Http::fake(['inventario.test/api/dispensaciones' => Http::response(['message' => 'caído'], 503)]);
+
+        $entrega = $this->entregaConItems([
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad_solicitada' => 3, 'cantidad_entregada' => 3, 'cantidad_pendiente' => 0, 'resultado' => 'entregado'],
+        ]);
+        Entrega::withoutEvents(fn () => $entrega->update(['estado' => Entrega::ESTADO_COMPLETADA]));
+
+        $job = new DescontarInventarioDeEntrega($entrega->fresh(['items', 'sede', 'usuario']));
+
+        try {
+            $job->handle(app(\App\Services\Inventario\InventarioApi::class));
+            $this->fail('Debió lanzar por HTTP 503.');
+        } catch (\Throwable $e) {
+            $this->assertNotEmpty($e->getMessage());
+        }
+
+        $this->assertSame(5, $job->tries);
+        $this->assertSame([30, 120, 600, 1800], $job->backoff);
+        $this->assertDatabaseHas('entregas', [
+            'id' => $entrega->id,
+            'estado' => Entrega::ESTADO_COMPLETADA,
+        ]);
+    }
+
+    public function test_d10_rollback_de_dispensacion_no_despacha_inventario(): void
+    {
+        $this->configurarApi();
+        Queue::fake();
+
+        [$sede, $usuario] = $this->sedeYUsuarioDispensador();
+        $ticket = $this->ticketListo($sede, $usuario, [
+            ['codigo' => 'MED-001', 'nombre' => 'A', 'cantidad' => 5, 'unidad' => 'TAB'],
+        ]);
+        $dto = app(TicketConsultaInterface::class)->buscarPorNumero($ticket->numero);
+
+        try {
+            app(RegistrarEntrega::class)->handle($dto, $usuario, [
+                'tipo' => Entrega::TIPO_PRESENCIAL,
+                'sede_id' => $sede->id,
+                'firma_contenido' => 'firma',
+                'receptor_nombre' => 'Paciente Prueba',
+                'receptor_documento' => '123',
+                'receptor_parentesco' => 'Paciente',
+                'items' => [[
+                    'ticket_item_id' => $dto->items[0]->id,
+                    'codigo' => 'MED-001',
+                    'nombre' => 'A',
+                    'cantidad_solicitada' => 5,
+                    'unidad' => 'TAB',
+                    'cantidad_entregada' => 99,
+                    'resultado' => EntregaItem::RESULTADO_ENTREGADO,
+                ]],
+            ]);
+            $this->fail('Debió rechazar la cantidad por superar el saldo.');
+        } catch (\InvalidArgumentException) {
+            // La transacción de RegistrarEntrega hace rollback: no hay Entrega ni despacho.
+        }
+
+        Queue::assertNothingPushed();
+        $this->assertSame(0, Entrega::query()->where('ticket_numero', $ticket->numero)->count());
     }
 }

@@ -82,10 +82,13 @@ class AppServiceProvider extends ServiceProvider
 
         // Lo entregado sale del inventario, escuchando el modelo para no tocar el módulo de entrega.
         // `updated` y no `saved`: un save sin cambios repite `saved` con el wasChanged viejo.
+        // Solo al cerrar la dispensación (en_proceso → parcial|completada): un cambio logístico
+        // posterior (p. ej. domicilio no_entregado que fuerza parcial) no vuelve a despachar.
         Entrega::updated(function (Entrega $entrega): void {
             if (InventarioApi::configurada()
                 && in_array($entrega->estado, [Entrega::ESTADO_COMPLETADA, Entrega::ESTADO_PARCIAL], true)
-                && $entrega->wasChanged('estado')) {
+                && $entrega->wasChanged('estado')
+                && $entrega->getOriginal('estado') === Entrega::ESTADO_EN_PROCESO) {
                 DescontarInventarioDeEntrega::dispatch($entrega)->afterCommit();
             }
         });
