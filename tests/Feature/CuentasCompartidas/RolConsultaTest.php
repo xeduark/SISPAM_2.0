@@ -12,6 +12,7 @@ use Database\Seeders\RolSeeder;
 use Database\Seeders\SedeSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Tests\Concerns\RecorreElPanel;
 use Tests\TestCase;
@@ -64,10 +65,52 @@ class RolConsultaTest extends TestCase
      *  El rol
      * ------------------------------------------------------------------ */
 
-    public function test_el_rol_consulta_solo_tiene_ver_lo_basico_de_consultar_paciente(): void
+    public function test_el_rol_consulta_solo_tiene_lo_basico_y_los_programas_de_consultar_paciente(): void
     {
-        $this->assertSame(['consultar_paciente' => ['ver']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
+        $this->assertSame(['consultar_paciente' => ['ver', 'ver_programas']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
         $this->assertTrue($this->cuenta->soloPuedeConsultar());
+        $this->assertFalse($this->cuenta->puede('consultar_paciente.ver_completo'));
+    }
+
+    public function test_la_migracion_le_da_ver_programas_a_consulta_y_a_nadie_mas(): void
+    {
+        Rol::query()->delete();
+        // El administrador ya le había sumado algo a CONSULTA: no se pierde.
+        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['consultar_paciente' => ['ver'], 'auditoria' => ['ver']]]);
+        Rol::create(['nombre' => 'ORIENTADOR', 'permisos' => ['consultar_paciente' => ['ver', 'ver_completo'], 'pacientes' => ['ver']]]);
+        Rol::create(['nombre' => 'FARMACIA', 'permisos' => ['entrega' => ['ver']]]);
+
+        $migracion = require database_path('migrations/2026_10_16_100000_ver_programas_para_consulta.php');
+        $migracion->up();
+
+        $despues = Rol::orderBy('nombre')->pluck('permisos', 'nombre')->all();
+
+        $this->assertSame(['consultar_paciente' => ['ver', 'ver_programas'], 'auditoria' => ['ver']], $despues['CONSULTA']);
+        $this->assertSame(['consultar_paciente' => ['ver', 'ver_completo'], 'pacientes' => ['ver']], $despues['ORIENTADOR']);
+        $this->assertSame(['entrega' => ['ver']], $despues['FARMACIA']);
+
+        // Correrla dos veces no cambia nada.
+        $migracion->up();
+        $this->assertSame($despues, Rol::orderBy('nombre')->pluck('permisos', 'nombre')->all());
+
+        $migracion->down();
+
+        $this->assertSame(['consultar_paciente' => ['ver'], 'auditoria' => ['ver']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
+    }
+
+    public function test_la_migracion_no_crea_el_rol_ni_le_da_programas_a_quien_no_consulta(): void
+    {
+        Rol::query()->delete();
+
+        $migracion = require database_path('migrations/2026_10_16_100000_ver_programas_para_consulta.php');
+        $migracion->up();
+        $this->assertSame(0, Rol::count());
+
+        // Si el administrador le quitó «ver» a CONSULTA, no se le da lo de encima.
+        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['auditoria' => ['ver']]]);
+        $migracion->up();
+
+        $this->assertSame(['auditoria' => ['ver']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
     }
 
     public function test_la_migracion_le_da_ver_todo_a_quien_ya_consultaba_pero_no_a_consulta(): void
@@ -147,10 +190,10 @@ class RolConsultaTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ *
-     *  Lo que ve de Savia: lo básico
+     *  Lo que ve de Savia: lo básico, y los programas y RIAS
      * ------------------------------------------------------------------ */
 
-    public function test_ve_lo_basico_y_los_datos_de_salud_no_llegan_al_navegador(): void
+    public function test_ve_lo_basico_y_los_demas_datos_de_salud_no_llegan_al_navegador(): void
     {
         $this->entrarComoConsulta();
 
@@ -160,13 +203,168 @@ class RolConsultaTest extends TestCase
             ->assertSee('CONTRIBUTIVO')
             ->assertSee('E.S.E METROSALUD')
             ->assertSee('Ves los datos básicos')
-            ->assertDontSee('PROGRAMA VIH')
-            ->assertDontSee('Programas especiales')
             ->assertDontSee('MEDELLÍN')
             ->assertDontSee('3001234567');
 
         // Ni en el estado de Livewire, que viaja al navegador aunque no se pinte.
-        $this->assertSame([], array_diff(array_keys($pantalla->get('afiliado')), ConsultarPaciente::CAMPOS_BASICOS));
+        $afiliado = $pantalla->get('afiliado');
+        $this->assertSame([], array_diff(array_keys($afiliado), [...ConsultarPaciente::CAMPOS_BASICOS, 'programasEspeciales']));
+
+        foreach (['descripcionCiudadResidencia', 'telefonoMovil', 'discapacidad', 'nivelSisben', 'programas'] as $campo) {
+            $this->assertArrayNotHasKey($campo, $afiliado);
+        }
+
+        // Municipio y categoría sí son de lo básico.
+        $this->assertSame('BELLO', $afiliado['municipioAfiliacion']);
+        $this->assertSame('B', $afiliado['categoriaIBC']);
+    }
+
+    public function test_ve_los_programas_especiales_y_rias_debajo_del_encabezado(): void
+    {
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar()
+            ->assertSee('PROGRAMA VIH')
+            ->assertSee('1 programa(s) asociados al afiliado.')
+            ->assertSee('También ves los programas especiales y RIAS.')
+            ->assertDontSee('Savia no reporta programas');
+
+        $this->assertSame(
+            [['tipo' => 'Programa Especial', 'descripcion' => 'PROGRAMA VIH']],
+            $pantalla->get('afiliado')['programasEspeciales'],
+        );
+
+        // Justo después del encabezado y antes de los grupos de datos.
+        $this->assertMatchesRegularExpression(
+            '/No registrado en SISPAM.*Ves los datos básicos.*Programas especiales y RIAS.*PROGRAMA VIH.*Identificación del afiliado/s',
+            $pantalla->html(stripInitialData: true),
+        );
+    }
+
+    public function test_si_savia_no_manda_programas_lo_dice_en_vez_de_esconder_la_seccion(): void
+    {
+        $this->saviaResponde(['programas' => null]);
+        $this->entrarComoConsulta();
+
+        $this->consultar()
+            ->assertSee('Programas especiales y RIAS')
+            ->assertSee('Savia no reporta programas ni RIAS para este afiliado.')
+            ->assertDontSee('programa(s) asociados');
+    }
+
+    public function test_un_rol_con_solo_ver_no_ve_los_programas_ni_le_llegan_al_navegador(): void
+    {
+        Rol::create(['nombre' => 'SOLO_LO_BASICO', 'permisos' => ['consultar_paciente' => ['ver']]]);
+        $this->entrarComo('SOLO_LO_BASICO');
+
+        $pantalla = $this->consultar()
+            ->assertSee('JUAN JOSE RAMIREZ PULGARIN')
+            ->assertSee('Ves los datos básicos')
+            ->assertDontSee('PROGRAMA VIH')
+            ->assertDontSee('Programas especiales y RIAS')
+            ->assertDontSee('Savia no reporta programas')
+            ->assertDontSee('También ves los programas');
+
+        $afiliado = $pantalla->get('afiliado');
+        $this->assertSame([], array_diff(array_keys($afiliado), ConsultarPaciente::CAMPOS_BASICOS));
+        $this->assertArrayNotHasKey('programasEspeciales', $afiliado);
+        $this->assertArrayNotHasKey('programas', $afiliado);
+    }
+
+    public function test_el_administrador_le_quita_los_programas_desde_la_matriz(): void
+    {
+        Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => ['consultar_paciente' => ['ver']]]);
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar()->assertDontSee('PROGRAMA VIH');
+
+        $this->assertArrayNotHasKey('programasEspeciales', $pantalla->get('afiliado'));
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Municipio y categoría, arriba con el nombre
+     * ------------------------------------------------------------------ */
+
+    public function test_ve_el_municipio_y_la_categoria_de_un_contributivo_en_el_encabezado(): void
+    {
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar()
+            ->assertSee('Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio e IPS primaria.');
+
+        // En el encabezado: con el nombre y junto a la insignia del régimen.
+        $this->assertMatchesRegularExpression(
+            '/JUAN JOSE RAMIREZ PULGARIN.*Municipio: BELLO \(ANTIOQUIA\).*CONTRIBUTIVO.*Categoría B.*No registrado en SISPAM/s',
+            $pantalla->html(stripInitialData: true),
+        );
+    }
+
+    public function test_si_savia_ya_manda_la_palabra_categoria_no_la_repite(): void
+    {
+        $this->saviaResponde(['categoriaIBC' => 'CATEGORÍA C']);
+        $this->entrarComoConsulta();
+
+        $this->consultar()
+            ->assertSee('CATEGORÍA C')
+            ->assertDontSee('Categoría CATEGORÍA');
+    }
+
+    public function test_un_subsidiado_no_muestra_nada_de_categoria(): void
+    {
+        // Aunque Savia la mande: la categoría solo es del contributivo.
+        $this->saviaResponde(['regimen' => 'SUBSIDIADO', 'categoriaIBC' => 'A']);
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar()
+            ->assertSee('SUBSIDIADO')
+            ->assertSee('Municipio: BELLO (ANTIOQUIA)')
+            ->assertDontSee('Categoría A')
+            ->assertDontSee('Categoría IBC')
+            ->assertDontSee('Categoría: sin dato en Savia');
+
+        $this->assertArrayNotHasKey('categoriaIBC', $pantalla->get('afiliado'));
+    }
+
+    public function test_un_contributivo_sin_categoria_dice_que_no_hay_dato(): void
+    {
+        $this->saviaResponde(['regimen' => 'Contributivo', 'categoriaIBC' => null]);
+        $this->entrarComoConsulta();
+
+        $this->consultar()
+            ->assertSee('Categoría: sin dato en Savia')
+            ->assertSee('Municipio: BELLO (ANTIOQUIA)');
+    }
+
+    public function test_sin_municipio_usa_la_ciudad_de_afiliacion(): void
+    {
+        $this->saviaResponde(['municipioAfiliacion' => '', 'ciudadAfiliacion' => 'ENVIGADO']);
+        $this->entrarComoConsulta();
+
+        $this->consultar()->assertSee('Municipio: ENVIGADO (ANTIOQUIA)');
+    }
+
+    public function test_sin_municipio_ni_ciudad_dice_que_no_hay_dato(): void
+    {
+        $this->saviaResponde(['municipioAfiliacion' => null, 'departamentoAfiliacion' => null]);
+        $this->entrarComoConsulta();
+
+        $this->consultar()->assertSee('Municipio: sin dato en Savia');
+    }
+
+    public function test_puede_consultar_con_pt(): void
+    {
+        $this->saviaResponde(['tipoDocumentoAfiliado' => 'PT', 'documentoAfiliado' => '6543210']);
+        $this->entrarComoConsulta();
+
+        $this->consultar('6543210', 'PT')
+            ->assertHasNoFormErrors()
+            ->assertSet('afiliado.tipoDocumentoAfiliado', 'PT')
+            ->assertSee('JUAN JOSE RAMIREZ PULGARIN')
+            ->assertSee('Municipio: BELLO (ANTIOQUIA)');
+
+        Http::assertSent(fn ($peticion) => str_contains($peticion->url(), 'consultar-afiliado')
+            && $peticion['tipoDocumento'] === 'PT'
+            && $peticion['numeroDocumento'] === '6543210');
     }
 
     public function test_el_orientador_sigue_viendo_todo(): void

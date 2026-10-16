@@ -37,8 +37,12 @@ class Rol extends Model
         'consultar_paciente' => [
             'nombre' => 'Consultar paciente',
             'acciones' => [
-                // Identificación, estado de la afiliación, régimen e IPS primaria.
+                // Identificación, estado de la afiliación, régimen (con la
+                // categoría si es contributivo), municipio e IPS primaria.
                 'ver' => 'Ver lo básico',
+                // Solo los programas especiales y RIAS, encima de lo básico.
+                // Es lo del rol CONSULTA; `ver_completo` ya los incluye.
+                'ver_programas' => 'Ver programas especiales y RIAS',
                 // Programas especiales, discapacidad, Sisbén, contacto…: datos
                 // de salud. Se concede aparte para que el rol CONSULTA, que
                 // usan cuentas compartidas, no los vea.

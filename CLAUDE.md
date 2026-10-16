@@ -57,11 +57,13 @@ php artisan serve
   - **Consultar paciente** (`/admin/consultar-paciente`) — la puerta de entrada. Se escribe
     la cédula, se pulsa Enter y aparecen todos los datos que devuelve el servicio, si está
     activo en Savia y si ya está registrado en SISPAM. Desde ahí se registra o se actualiza.
-    Con `consultar_paciente.ver` se ve lo básico; con `ver_completo`, todo. Registrar,
+    Con `consultar_paciente.ver` se ve lo básico; `ver_programas` le suma los programas
+    especiales y RIAS; con `ver_completo`, todo. Registrar,
     actualizar y «Ver ficha» exigen su permiso de `pacientes` (ver «Cuentas compartidas»).
   - **Pacientes** (`/admin/pacientes`) — el registro local: listado, ficha, edición.
 - Archivos:
-  - `config/savia.php` — endpoints, tipos de documento, tabla de códigos y los ~78
+  - `config/savia.php` — endpoints, tipos de documento (PT incluido, aunque la V3 no lo
+    trae: si Savia no lo acepta responde -1003), tabla de códigos y los ~78
     campos de la respuesta agrupados y etiquetados en español.
   - `app/Services/Savia/SaviaClient.php` — genera el token, lo cachea, lo renueva tras
     un 401 y consulta. Clave de caché: `savia:token`.
@@ -157,7 +159,8 @@ hace falta que la IP del equipo esté autorizada por Savia.
 ## Cuentas compartidas (rol CONSULTA)
 - Cuatro cuentas, una por sede, que usan varias personas a la vez para **consultar en
   Savia y nada más**: `ConsultaPRP`, `ConsultaBIC`, `ConsultaL30`, `ConsultaAVT` (el
-  documento es el username en Authentik). Rol `CONSULTA` (`Rol::CONSULTA`): solo `consultar_paciente.ver`.
+  documento es el username en Authentik). Rol `CONSULTA` (`Rol::CONSULTA`): solo
+  `consultar_paciente.ver` y `consultar_paciente.ver_programas`.
 - Se crean con `php artisan db:seed --class=CuentasDeConsultaSeeder` (llama a `RolSeeder`;
   se puede volver a correr). Se marcan con `users.cuenta_compartida`, que solo cambia un administrador.
 - **Siempre tienen el rol CONSULTA, y solo ese**, venga o no el grupo desde Authentik:
@@ -167,10 +170,19 @@ hace falta que la IP del equipo esté autorizada por Savia.
   matriz, en el rol CONSULTA. En Usuarios el campo Roles queda fijo y, al guardar, SISPAM
   les asigna el grupo CONSULTA en Authentik. La migración
   `2026_10_14_100000_cuentas_compartidas_con_rol_consulta` arregló las que ya existían.
-- **Ven lo básico** (`ConsultarPaciente::CAMPOS_BASICOS`): identificación, estado, régimen e
-  IPS primaria. El resto se quita en el servidor, porque el estado de Livewire viaja al
-  navegador. Lo completo es `consultar_paciente.ver_completo`; la migración
+- **Ven lo básico** (`ConsultarPaciente::CAMPOS_BASICOS`): identificación, estado, régimen
+  (con la categoría A, B o C si es contributivo), municipio de afiliación e IPS primaria.
+  Municipio y categoría salen en el encabezado del resultado, sin bajar, para todos (desde la
+  v1.1.2); la categoría solo se muestra, no se guarda. El resto se quita en el servidor, porque
+  el estado de Livewire viaja al navegador. Lo completo es `consultar_paciente.ver_completo`; la migración
   `2026_10_13_110000_ver_todo_lo_de_savia` se lo dio a todo rol que ya consultaba.
+- **Ven también los programas especiales y RIAS** (desde la v1.1.2): acción
+  `consultar_paciente.ver_programas`, que los muestra a quien solo tiene lo básico (con
+  `ver_completo` ya se veían). Sin ella, `programasEspeciales` no sale del servidor. La sección
+  va debajo del encabezado y, si Savia no reporta ninguno, dice «Savia no reporta programas ni
+  RIAS para este afiliado» en vez de esconderse. A las bases que ya tenían el rol se la dio
+  `2026_10_16_100000_ver_programas_para_consulta` (solo agrega); el administrador se la puede
+  quitar en Roles y permisos.
 - **Al iniciar sesión, lo primero y lo único es «Consultar paciente»**: el callback de
   Authentik las manda ahí sin importar la dirección que hubieran abierto antes, el
   Escritorio no les sale (`App\Filament\Pages\Dashboard`, también para quien

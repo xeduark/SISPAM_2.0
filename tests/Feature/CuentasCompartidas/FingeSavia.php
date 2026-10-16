@@ -15,6 +15,9 @@ use Livewire\Livewire;
  */
 trait FingeSavia
 {
+    /** Lo que responde Savia; `saviaResponde()` lo cambia en cada prueba. */
+    protected array $afiliadoDeSavia = [];
+
     protected function configurarSavia(): void
     {
         Cache::flush();
@@ -26,40 +29,59 @@ trait FingeSavia
             'savia.auditar' => false,
         ]);
 
+        $this->afiliadoDeSavia = [
+            'tipoDocumentoAfiliado' => 'CC',
+            'documentoAfiliado' => '1000873458',
+            'primerNombreAfiliado' => 'JUAN',
+            'segundoNombreAfiliado' => 'JOSE',
+            'primerApellidoAfiliado' => 'RAMIREZ',
+            'segundoApellidoAfiliado' => 'PULGARIN',
+            'fechaNacimientoAfiliado' => '2003-02-04',
+            'estadoAfiliacion' => 'Activo',
+            'regimen' => 'CONTRIBUTIVO',
+            'categoriaIBC' => 'B',
+            'municipioAfiliacion' => 'BELLO',
+            'departamentoAfiliacion' => 'ANTIOQUIA',
+            'ipsprimaria' => 'E.S.E METROSALUD',
+            // Lo que el rol CONSULTA no debe ver.
+            'descripcionCiudadResidencia' => 'MEDELLÍN',
+            'telefonoMovil' => '3001234567',
+            'discapacidad' => 'SI',
+            'nivelSisben' => 'A1',
+            'programas' => [
+                ['tipo' => 'Programa Especial', 'descripcion' => 'PROGRAMA VIH'],
+            ],
+        ];
+
+        // Se lee al responder, no al fingir: así cada prueba ajusta el afiliado.
         Http::fake([
             '*rest/token/generacion' => Http::response(['access_token' => 'TOKEN-A', 'expires_in' => 3600]),
-            '*rest/afiliado/consultar-afiliado' => Http::response([
+            '*rest/afiliado/consultar-afiliado' => fn () => Http::response([
                 'registros' => 1,
                 'codigo' => 0,
                 'mensaje' => 'Afiliado encontrado',
-                'afiliados' => [[
-                    'tipoDocumentoAfiliado' => 'CC',
-                    'documentoAfiliado' => '1000873458',
-                    'primerNombreAfiliado' => 'JUAN',
-                    'segundoNombreAfiliado' => 'JOSE',
-                    'primerApellidoAfiliado' => 'RAMIREZ',
-                    'segundoApellidoAfiliado' => 'PULGARIN',
-                    'fechaNacimientoAfiliado' => '2003-02-04',
-                    'estadoAfiliacion' => 'Activo',
-                    'regimen' => 'CONTRIBUTIVO',
-                    'ipsprimaria' => 'E.S.E METROSALUD',
-                    // Lo que el rol CONSULTA no debe ver.
-                    'descripcionCiudadResidencia' => 'MEDELLÍN',
-                    'telefonoMovil' => '3001234567',
-                    'discapacidad' => 'SI',
-                    'nivelSisben' => 'A1',
-                    'programas' => [
-                        ['tipo' => 'Programa Especial', 'descripcion' => 'PROGRAMA VIH'],
-                    ],
-                ]],
+                'afiliados' => [$this->afiliadoDeSavia],
             ]),
         ]);
     }
 
-    protected function consultar(string $numero = '1000873458'): Testable
+    /**
+     * Cambia lo que responde Savia. Un campo en null se quita de la respuesta.
+     *
+     * @param  array<string, mixed>  $cambios
+     */
+    protected function saviaResponde(array $cambios): void
+    {
+        $this->afiliadoDeSavia = array_filter(
+            array_merge($this->afiliadoDeSavia, $cambios),
+            fn ($valor) => $valor !== null,
+        );
+    }
+
+    protected function consultar(string $numero = '1000873458', string $tipo = 'CC'): Testable
     {
         return Livewire::test(ConsultarPaciente::class)
-            ->fillForm(['tipo_documento' => 'CC', 'numero_documento' => $numero])
+            ->fillForm(['tipo_documento' => $tipo, 'numero_documento' => $numero])
             ->call('buscar');
     }
 }

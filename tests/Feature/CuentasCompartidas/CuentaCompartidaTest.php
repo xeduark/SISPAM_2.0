@@ -168,7 +168,15 @@ class CuentaCompartidaTest extends TestCase
 
     public function test_lo_que_puede_hacer_se_ajusta_en_la_matriz(): void
     {
+        // Con lo del rol: lo básico y los programas, sin el teléfono.
         $this->actingAs($this->cuenta);
+        $this->consultar()->assertSee('PROGRAMA VIH')->assertDontSee('3001234567');
+
+        Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => [
+            'consultar_paciente' => ['ver'],
+        ]]);
+        $this->actingAs($this->cuenta->fresh());
+
         $this->consultar()->assertDontSee('PROGRAMA VIH');
 
         Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => [
@@ -176,7 +184,7 @@ class CuentaCompartidaTest extends TestCase
         ]]);
         $this->actingAs($this->cuenta->fresh());
 
-        $this->consultar()->assertSee('PROGRAMA VIH');
+        $this->consultar()->assertSee('PROGRAMA VIH')->assertSee('3001234567');
     }
 
     public function test_marcarla_como_compartida_le_deja_solo_consulta(): void

@@ -22,8 +22,9 @@ use Livewire\Attributes\Locked;
  *
  * ## Qué ve cada quien
  *
- * - `consultar_paciente.ver`: lo básico (`CAMPOS_BASICOS`). Es lo del rol
- *   CONSULTA, que usan cuentas compartidas.
+ * - `consultar_paciente.ver`: lo básico (`CAMPOS_BASICOS`).
+ * - `consultar_paciente.ver_programas`: además, los programas especiales y
+ *   RIAS. Con `ver`, es lo del rol CONSULTA, que usan cuentas compartidas.
  * - `consultar_paciente.ver_completo`: todo, programas especiales y datos de
  *   salud incluidos.
  *
@@ -45,8 +46,13 @@ class ConsultarPaciente extends Page implements HasForms
 
     /**
      * Lo que ve quien solo tiene `consultar_paciente.ver`: identificación,
-     * estado de la afiliación, régimen e IPS primaria. Lista blanca: un campo
-     * nuevo que agregue Savia no se ve hasta que alguien lo ponga aquí.
+     * estado de la afiliación, régimen (con la categoría A, B o C si es
+     * contributivo), municipio de afiliación e IPS primaria. Lista blanca: un
+     * campo nuevo que agregue Savia no se ve hasta que alguien lo ponga aquí.
+     *
+     * El municipio y la categoría salen además en el encabezado, para verlos
+     * sin bajar en la pantalla. La categoría solo es del contributivo: en otro
+     * régimen no se manda, aunque Savia la traiga (`soloLoBasico()`).
      */
     public const CAMPOS_BASICOS = [
         'tipoDocumentoAfiliado',
@@ -59,6 +65,10 @@ class ConsultarPaciente extends Page implements HasForms
         'estadoAfiliacion',
         'causaEstado',
         'regimen',
+        'categoriaIBC',
+        'municipioAfiliacion',
+        'ciudadAfiliacion',
+        'departamentoAfiliacion',
         'ipsprimaria',
         'sedeIPSPrimaria',
     ];
@@ -193,9 +203,7 @@ class ConsultarPaciente extends Page implements HasForms
         }
 
         // Lo que no se puede ver no sale del servidor.
-        $this->afiliado = $this->veTodo
-            ? $afiliado
-            : array_intersect_key($afiliado, array_flip(self::CAMPOS_BASICOS));
+        $this->afiliado = $this->veTodo ? $afiliado : self::soloLoBasico($afiliado, conProgramas: $this->veProgramas);
 
         $paciente = Paciente::where('tipo_documento', $afiliado['tipoDocumentoAfiliado'] ?? $datos['tipo_documento'])
             ->where('numero_documento', $afiliado['documentoAfiliado'] ?? $datos['numero_documento'])
@@ -257,6 +265,33 @@ class ConsultarPaciente extends Page implements HasForms
         $this->form->fill(['tipo_documento' => 'CC']);
     }
 
+    /**
+     * El afiliado recortado a `CAMPOS_BASICOS` (y a los programas, si los
+     * puede ver), sin la categoría si el régimen no es contributivo.
+     *
+     * @param  array<string, mixed>  $afiliado
+     * @return array<string, mixed>
+     */
+    private static function soloLoBasico(array $afiliado, bool $conProgramas): array
+    {
+        $campos = $conProgramas ? [...self::CAMPOS_BASICOS, 'programasEspeciales'] : self::CAMPOS_BASICOS;
+
+        $basico = array_intersect_key($afiliado, array_flip($campos));
+
+        if (! self::esContributivo($basico['regimen'] ?? null)) {
+            unset($basico['categoriaIBC']);
+        }
+
+        return $basico;
+    }
+
+    /** El régimen llega como texto libre: se compara en minúsculas y sin tildes. */
+    private static function esContributivo(mixed $regimen): bool
+    {
+        return is_scalar($regimen)
+            && str_contains(Paciente::normalizarTexto((string) $regimen), 'contributivo');
+    }
+
     private function reiniciarResultado(): void
     {
         $this->afiliado = null;
@@ -291,6 +326,12 @@ class ConsultarPaciente extends Page implements HasForms
         return (bool) auth()->user()?->puede('consultar_paciente.ver_completo');
     }
 
+    /** Si ve los programas especiales y RIAS: con `ver_completo`, o solo esos con `ver_programas`. */
+    public function getVeProgramasProperty(): bool
+    {
+        return $this->veTodo || (bool) auth()->user()?->puede('consultar_paciente.ver_programas');
+    }
+
     public function getPuedeRegistrarProperty(): bool
     {
         return $this->pacienteId === null && $this->puedeGuardar(existe: false);
@@ -319,6 +360,53 @@ class ConsultarPaciente extends Page implements HasForms
     public function getEstadoAfiliacionProperty(): ?string
     {
         return $this->afiliado['estadoAfiliacion'] ?? null;
+    }
+
+    /**
+     * «BELLO (ANTIOQUIA)»: el municipio de afiliación o, si no viene, la
+     * ciudad. Null si Savia no mandó ninguno de los dos.
+     */
+    public function getMunicipioProperty(): ?string
+    {
+        $municipio = $this->textoDelAfiliado('municipioAfiliacion') ?: $this->textoDelAfiliado('ciudadAfiliacion');
+
+        if ($municipio === '') {
+            return null;
+        }
+
+        $departamento = $this->textoDelAfiliado('departamentoAfiliacion');
+
+        return $departamento === '' ? $municipio : "{$municipio} ({$departamento})";
+    }
+
+    public function getEsContributivoProperty(): bool
+    {
+        return self::esContributivo($this->afiliado['regimen'] ?? null);
+    }
+
+    /**
+     * «Categoría B», o null si Savia no la mandó. No se sabe si llega como
+     * «B» o como «Categoría B»: si ya empieza por «categoría», va tal cual.
+     */
+    public function getCategoriaProperty(): ?string
+    {
+        $categoria = $this->textoDelAfiliado('categoriaIBC');
+
+        if ($categoria === '') {
+            return null;
+        }
+
+        return str_starts_with(Paciente::normalizarTexto($categoria), 'categoria')
+            ? $categoria
+            : "Categoría {$categoria}";
+    }
+
+    /** Un campo del afiliado como texto; cadena vacía si no vino. */
+    private function textoDelAfiliado(string $campo): string
+    {
+        $valor = $this->afiliado[$campo] ?? null;
+
+        return is_scalar($valor) ? trim((string) $valor) : '';
     }
 
     public function getEstaActivoProperty(): bool
