@@ -165,6 +165,19 @@ class ProbarSaviaTest extends TestCase
         $this->assertStringContainsString('(sin resultado)', Auditoria::sole()->descripcion);
     }
 
+    public function test_acepta_el_tipo_pt_y_se_lo_manda_a_savia(): void
+    {
+        $this->saviaResponde(['registros' => 0, 'codigo' => -1000, 'mensaje' => 'Afiliado no encontrado', 'afiliados' => []]);
+
+        $this->artisan('savia:probar', ['documento' => '6543210', '--tipo' => 'PT'])
+            ->expectsOutputToContain('Consulta de PT 6543210')
+            ->doesntExpectOutputToContain('no es un tipo de documento de Savia')
+            ->assertSuccessful();
+
+        Http::assertSent(fn ($peticion) => str_contains($peticion->url(), 'consultar-afiliado')
+            && $peticion['tipoDocumento'] === 'PT');
+    }
+
     public function test_si_la_consulta_falla_dice_por_que(): void
     {
         $this->saviaResponde(['codigo' => -1, 'mensaje' => 'MENSAJE: null'], 401);

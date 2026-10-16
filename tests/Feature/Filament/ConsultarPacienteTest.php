@@ -117,6 +117,60 @@ class ConsultarPacienteTest extends TestCase
             ->assertDontSee('AtenciÃ³n');
     }
 
+    public function test_todos_ven_el_municipio_y_la_categoria_en_el_encabezado(): void
+    {
+        $this->fakeExitoso([
+            'municipioAfiliacion' => 'BELLO',
+            'departamentoAfiliacion' => 'ANTIOQUIA',
+            'categoriaIBC' => 'A',
+        ]);
+
+        // El administrador ve todo, y además arriba, antes de los grupos.
+        $this->assertMatchesRegularExpression(
+            '/JUAN JOSE RAMIREZ PULGARIN.*Municipio: BELLO \(ANTIOQUIA\).*CONTRIBUTIVO.*Categoría A.*Identificación del afiliado/s',
+            $this->buscar()->html(stripInitialData: true),
+        );
+    }
+
+    public function test_sin_programas_la_seccion_lo_dice_en_vez_de_esconderse(): void
+    {
+        $this->fakeExitoso(['programas' => []]);
+
+        $this->buscar()
+            ->assertSee('Programas especiales y RIAS')
+            ->assertSee('Savia no reporta programas ni RIAS para este afiliado.')
+            ->assertDontSee('programa(s) asociados');
+    }
+
+    public function test_se_puede_consultar_con_pt_y_se_le_manda_a_savia(): void
+    {
+        $this->assertArrayHasKey('PT', config('savia.tipos_documento'));
+        $this->fakeExitoso(['tipoDocumentoAfiliado' => 'PT', 'documentoAfiliado' => '6543210']);
+
+        $this->buscar('6543210', 'PT')
+            ->assertHasNoFormErrors()
+            ->assertSet('afiliado.tipoDocumentoAfiliado', 'PT')
+            ->assertSee('JUAN JOSE RAMIREZ PULGARIN');
+
+        Http::assertSent(fn ($peticion) => str_contains($peticion->url(), 'consultar-afiliado')
+            && $peticion['tipoDocumento'] === 'PT'
+            && $peticion['numeroDocumento'] === '6543210');
+    }
+
+    public function test_si_savia_no_acepta_pt_muestra_su_mensaje(): void
+    {
+        // La V3 no trae PT: si Savia no lo acepta responde -1003, sin manejo aparte.
+        Http::fake([
+            self::URL_TOKEN => Http::response(['access_token' => 'TOKEN-A', 'expires_in' => 3600]),
+            self::URL_CONSULTA => Http::response(['codigo' => -1003, 'mensaje' => 'Atributo sin formato correcto', 'afiliados' => []]),
+        ]);
+
+        $this->buscar('6543210', 'PT')
+            ->assertSuccessful()
+            ->assertSet('afiliado', null)
+            ->assertSee(config('savia.codigos.-1003.texto'));
+    }
+
     public function test_avisa_si_el_afiliado_no_esta_registrado_en_sispam(): void
     {
         $this->fakeExitoso();

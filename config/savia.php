@@ -75,6 +75,9 @@ return [
         'CE' => 'CE — Cédula de extranjería',
         'PA' => 'PA — Pasaporte',
         'PE' => 'PE — Permiso especial de permanencia',
+        // La V3 no trae PT. Si Savia no lo acepta responde -1003 y la
+        // pantalla ya muestra ese mensaje: no lleva manejo aparte.
+        'PT' => 'PT — Permiso por protección temporal',
         'CN' => 'CN — Certificado de nacido vivo',
         'MS' => 'MS — Menor sin identificación',
         'SC' => 'SC — Salvoconducto de permanencia',

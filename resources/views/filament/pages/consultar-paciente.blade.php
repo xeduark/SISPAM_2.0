@@ -68,6 +68,10 @@
                                 · Nacimiento {{ $afiliado['fechaNacimientoAfiliado'] }}
                             @endif
                         </p>
+                        {{-- Arriba, con el nombre: las sedes lo necesitan sin bajar en la pantalla. --}}
+                        <p class="mt-1 text-sm font-medium text-gray-950 dark:text-white">
+                            Municipio: {{ $this->municipio ?? 'sin dato en Savia' }}
+                        </p>
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">
@@ -78,6 +82,13 @@
                         @if (! empty($afiliado['regimen']))
                             <x-filament::badge color="gray" size="lg">
                                 {{ $afiliado['regimen'] }}
+                            </x-filament::badge>
+                        @endif
+
+                        {{-- La categoría (A, B o C) solo es del contributivo. --}}
+                        @if ($this->esContributivo)
+                            <x-filament::badge color="gray" size="lg">
+                                {{ $this->categoria ?? 'Categoría: sin dato en Savia' }}
                             </x-filament::badge>
                         @endif
 
@@ -129,29 +140,40 @@
 
                 @unless ($this->veTodo)
                     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                        Ves los datos básicos de la afiliación: identificación, estado, régimen e IPS primaria.
+                        Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio e IPS primaria.
+                        @if ($this->veProgramas)
+                            También ves los programas especiales y RIAS.
+                        @endif
                     </p>
                 @endunless
             </x-filament::section>
 
-            {{-- Programas especiales y RIAS --}}
-            @if (count($this->programas))
+            {{-- Programas especiales y RIAS (ver_completo o ver_programas). Sin
+                 programas la sección no se esconde: dice que Savia no reporta ninguno. --}}
+            @if ($this->veProgramas)
                 <x-filament::section icon="heroicon-o-heart" icon-color="primary">
                     <x-slot name="heading">Programas especiales y RIAS</x-slot>
-                    <x-slot name="description">{{ count($this->programas) }} programa(s) asociados al afiliado.</x-slot>
 
-                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        @foreach ($this->programas as $programa)
-                            <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-white/5">
-                                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                    {{ $programa['tipo'] }}
+                    @if (count($this->programas))
+                        <x-slot name="description">{{ count($this->programas) }} programa(s) asociados al afiliado.</x-slot>
+
+                        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            @foreach ($this->programas as $programa)
+                                <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-white/5">
+                                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        {{ $programa['tipo'] }}
+                                    </div>
+                                    <div class="mt-1 text-sm font-medium text-gray-950 dark:text-white">
+                                        {{ $programa['descripcion'] }}
+                                    </div>
                                 </div>
-                                <div class="mt-1 text-sm font-medium text-gray-950 dark:text-white">
-                                    {{ $programa['descripcion'] }}
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            Savia no reporta programas ni RIAS para este afiliado.
+                        </p>
+                    @endif
                 </x-filament::section>
             @endif
 
