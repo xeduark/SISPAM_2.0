@@ -43,9 +43,13 @@ trait FingeSavia
             'municipioAfiliacion' => 'BELLO',
             'departamentoAfiliacion' => 'ANTIOQUIA',
             'ipsprimaria' => 'E.S.E METROSALUD',
+            // El contacto: lo ve quien tenga `ver_contacto`, como CONSULTA.
+            'telefonoMovil' => '3001234567',
+            'telefono' => '6043005012',
+            'email' => 'juan@ejemplo.com',
             // Lo que el rol CONSULTA no debe ver.
             'descripcionCiudadResidencia' => 'MEDELLÍN',
-            'telefonoMovil' => '3001234567',
+            'direccion' => 'KR 40 70A 23',
             'discapacidad' => 'SI',
             'nivelSisben' => 'A1',
             'programas' => [

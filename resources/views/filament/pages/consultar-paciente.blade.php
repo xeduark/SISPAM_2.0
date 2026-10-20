@@ -72,6 +72,26 @@
                         <p class="mt-1 text-sm font-medium text-gray-950 dark:text-white">
                             Municipio: {{ $this->municipio ?? 'sin dato en Savia' }}
                         </p>
+
+                        {{-- Contacto según Savia (ver_completo o ver_contacto). Sin el
+                             permiso ni siquiera llega al navegador: buscar() lo quita. --}}
+                        @if ($this->veContacto)
+                            <div class="mt-3 text-sm">
+                                <p class="font-semibold text-gray-950 dark:text-white">Contacto según Savia</p>
+                                <dl class="mt-1 space-y-1">
+                                    @foreach ($this->contactoSavia as $etiqueta => $valor)
+                                        <div class="break-words">
+                                            <dt class="inline text-gray-500 dark:text-gray-400">{{ $etiqueta }}:</dt>
+                                            <dd @class([
+                                                'inline',
+                                                'text-gray-950 dark:text-white' => $valor !== null,
+                                                'text-gray-500 dark:text-gray-400' => $valor === null,
+                                            ])>{{ $valor ?? 'sin dato en Savia' }}</dd>
+                                        </div>
+                                    @endforeach
+                                </dl>
+                            </div>
+                        @endif
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">
@@ -141,9 +161,7 @@
                 @unless ($this->veTodo)
                     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
                         Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio e IPS primaria.
-                        @if ($this->veProgramas)
-                            También ves los programas especiales y RIAS.
-                        @endif
+                        {{ $this->tambienVes }}
                     </p>
                 @endunless
             </x-filament::section>

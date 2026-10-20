@@ -777,8 +777,10 @@ Luego, en una ventana privada del navegador:
    el selector de sede.
 3. Consulta un documento real. Ves lo básico (nombre, estado, régimen, IPS) y
    ningún botón de registrar ni de ver ficha. Arriba, junto al nombre, salen el
-   municipio y, si es contributivo, la categoría; debajo, los programas
-   especiales y RIAS (o «Savia no reporta programas ni RIAS…»).
+   municipio y, si es contributivo, la categoría; bajo el municipio, «Contacto
+   según Savia» con celular, teléfono fijo y correo («sin dato en Savia» el que
+   no venga); debajo, los programas especiales y RIAS (o «Savia no reporta
+   programas ni RIAS…»).
 4. Escribe a mano `/admin/pacientes`, `/admin/tickets` y `/admin/users`: las
    tres responden 403 con la página en español. `/admin` te devuelve a
    Consultar paciente. `/sala/PRP` responde 404.

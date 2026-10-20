@@ -190,7 +190,7 @@ acciones de cada módulo.
 | Módulo (clave) | Acciones |
 |---|---|
 | Pacientes (`pacientes`) | ver, crear, editar, eliminar |
-| Consultar paciente (`consultar_paciente`) | ver (lo básico), ver_programas (programas especiales y RIAS), ver_completo (todo lo que trae Savia) |
+| Consultar paciente (`consultar_paciente`) | ver (lo básico), ver_programas (programas especiales y RIAS), ver_contacto (teléfono y correo), ver_completo (todo lo que trae Savia) |
 | Orientación (`orientacion`) | usar, ver_orden |
 | Sedes (`sedes`) | ver, crear, editar, eliminar |
 | Usuarios (`usuarios`) | ver, crear, editar, eliminar |
@@ -208,24 +208,28 @@ Reglas:
   - `ORIENTADOR`: Pacientes (ver, crear, editar), Consultar paciente (ver y
     ver todo), Orientación (usar, ver la orden médica) y Tickets (imprimir).
   - `DISPENSADOR`: Entrega, Pacientes (ver), Tickets (ver) y Turnos.
-  - `CONSULTA`: solo Consultar paciente (ver lo básico y los programas
-    especiales y RIAS). Ver la sección 5.
+  - `CONSULTA`: solo Consultar paciente (ver lo básico, los programas
+    especiales y RIAS, y el teléfono y el correo). Ver la sección 5.
 - **Ojo con los roles que ya existen:** `RolSeeder` usa `firstOrCreate`, así que
   no agrega permisos nuevos a un rol ya creado. Los permisos nuevos de un rol
   que ya está en la base llegan por migración, que **solo agrega** (por
   ejemplo, `2026_10_06_110000_dar_permiso_de_imprimir_al_orientador`,
-  `2026_10_13_110000_ver_todo_lo_de_savia` y
-  `2026_10_16_100000_ver_programas_para_consulta`).
-- **Consultar paciente tiene tres niveles.** `ver` muestra lo básico
+  `2026_10_13_110000_ver_todo_lo_de_savia`,
+  `2026_10_16_100000_ver_programas_para_consulta` y
+  `2026_10_20_100000_ver_contacto_para_consulta`).
+- **Consultar paciente tiene cuatro acciones.** `ver` muestra lo básico
   (identificación, estado de la afiliación, régimen —con la categoría si es
   contributivo—, municipio de afiliación e IPS primaria);
   `ver_programas` le suma solo los programas especiales y RIAS;
+  `ver_contacto`, solo el celular, el teléfono fijo y el correo según Savia;
   `ver_completo` muestra además programas especiales, discapacidad, Sisbén,
-  contacto y lo demás. La migración `2026_10_13_110000_ver_todo_lo_de_savia`
+  contacto, dirección y lo demás. La migración `2026_10_13_110000_ver_todo_lo_de_savia`
   le dio `ver_completo` a todo rol que ya tenía `ver` —menos a CONSULTA—, así
   que nadie que ya consultaba perdió nada. Desde la v1.1.2,
   `2026_10_16_100000_ver_programas_para_consulta` le da `ver_programas` a
-  CONSULTA (solo agrega; se le puede quitar en la matriz).
+  CONSULTA, y desde la v1.1.3 `2026_10_20_100000_ver_contacto_para_consulta`
+  le da `ver_contacto` (las dos solo agregan; se le pueden quitar en la
+  matriz).
 - **Registrar o actualizar desde Consultar paciente** exige `pacientes.crear`
   o `pacientes.editar`, y además `ver_completo`: lo que se guarda es la
   respuesta completa de Savia. El enlace «Ver ficha en SISPAM» exige
@@ -345,6 +349,13 @@ y no entran a nada más.
   ninguno, la sección dice «Savia no reporta programas ni RIAS para este
   afiliado». Si el administrador le quita la acción al rol, los programas
   dejan de salir del servidor.
+- **El teléfono y el correo según Savia también** (`ver_contacto`, desde la
+  v1.1.3): en el encabezado, debajo del municipio, el bloque «Contacto según
+  Savia» con Celular, Teléfono fijo y Correo (`telefonoMovil`, `telefono` y
+  `email`). El que Savia no mande dice «sin dato en Savia». La dirección no
+  entra (sigue siendo de `ver_completo`), y nada de esto se guarda: el
+  contacto del paciente en SISPAM es el que confirma el personal. Sin la
+  acción, esos tres campos no salen del servidor.
 - **Si el paciente ya está en SISPAM** (con la fecha), pero sin botones: ni
   «Registrar», ni «Actualizar», ni «Ver ficha».
 - **Cualquier otra pantalla, recurso o archivo le responde 403**. La sala de
@@ -449,8 +460,9 @@ php artisan db:seed --class=CuentasDeConsultaSeeder  # rol CONSULTA y las 4 cuen
 1. En una ventana privada, entra a `/admin` con `ConsultaPRP`. Llegas directo
    a Consultar paciente, sin preguntas y sin Escritorio.
 2. En el menú no hay nada más, y arriba no está el selector de sede. Consulta
-   una cédula: ves lo básico, los programas especiales y RIAS, el estado en
-   SISPAM y ningún botón.
+   una cédula: ves lo básico, el contacto según Savia (celular, teléfono fijo
+   y correo), los programas especiales y RIAS, el estado en SISPAM y ningún
+   botón.
 3. Escribe a mano `/admin/pacientes` o `/admin`: la primera responde 403 y la
    segunda vuelve a Consultar paciente.
 4. Como administrador, en **Usuarios** abre `ConsultaPRP`: el campo Roles dice

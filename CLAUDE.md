@@ -58,7 +58,7 @@ php artisan serve
     la cédula, se pulsa Enter y aparecen todos los datos que devuelve el servicio, si está
     activo en Savia y si ya está registrado en SISPAM. Desde ahí se registra o se actualiza.
     Con `consultar_paciente.ver` se ve lo básico; `ver_programas` le suma los programas
-    especiales y RIAS; con `ver_completo`, todo. Registrar,
+    especiales y RIAS; `ver_contacto`, el teléfono y el correo; con `ver_completo`, todo. Registrar,
     actualizar y «Ver ficha» exigen su permiso de `pacientes` (ver «Cuentas compartidas»).
   - **Pacientes** (`/admin/pacientes`) — el registro local: listado, ficha, edición.
 - Archivos:
@@ -160,7 +160,7 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - Cuatro cuentas, una por sede, que usan varias personas a la vez para **consultar en
   Savia y nada más**: `ConsultaPRP`, `ConsultaBIC`, `ConsultaL30`, `ConsultaAVT` (el
   documento es el username en Authentik). Rol `CONSULTA` (`Rol::CONSULTA`): solo
-  `consultar_paciente.ver` y `consultar_paciente.ver_programas`.
+  `consultar_paciente.ver`, `consultar_paciente.ver_programas` y `consultar_paciente.ver_contacto`.
 - Se crean con `php artisan db:seed --class=CuentasDeConsultaSeeder` (llama a `RolSeeder`;
   se puede volver a correr). Se marcan con `users.cuenta_compartida`, que solo cambia un administrador.
 - **Siempre tienen el rol CONSULTA, y solo ese**, venga o no el grupo desde Authentik:
@@ -183,6 +183,14 @@ hace falta que la IP del equipo esté autorizada por Savia.
   RIAS para este afiliado» en vez de esconderse. A las bases que ya tenían el rol se la dio
   `2026_10_16_100000_ver_programas_para_consulta` (solo agrega); el administrador se la puede
   quitar en Roles y permisos.
+- **Ven también el teléfono y el correo que manda Savia** (desde la v1.1.3): acción
+  `consultar_paciente.ver_contacto` («Ver teléfono y correo»), mismo patrón que `ver_programas`.
+  Son `telefonoMovil`, `telefono` y `email` (`ConsultarPaciente::CONTACTO_SAVIA`); sin la acción
+  no salen del servidor. Van en el encabezado, debajo del municipio, en el bloque «Contacto según
+  Savia» (Celular, Teléfono fijo, Correo); el que no venga dice «sin dato en Savia». La
+  dirección no entra: sigue siendo de `ver_completo`. Solo se muestran: el contacto que se
+  guarda sigue siendo el que confirma SISPAM (`Paciente::CAMPOS_CONTACTO`). A las bases que ya
+  tenían el rol se la dio `2026_10_20_100000_ver_contacto_para_consulta` (solo agrega).
 - **Al iniciar sesión, lo primero y lo único es «Consultar paciente»**: el callback de
   Authentik las manda ahí sin importar la dirección que hubieran abierto antes, el
   Escritorio no les sale (`App\Filament\Pages\Dashboard`, también para quien

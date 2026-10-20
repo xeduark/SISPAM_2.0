@@ -168,23 +168,23 @@ class CuentaCompartidaTest extends TestCase
 
     public function test_lo_que_puede_hacer_se_ajusta_en_la_matriz(): void
     {
-        // Con lo del rol: lo básico y los programas, sin el teléfono.
+        // Con lo del rol: lo básico, los programas y el teléfono, sin la dirección.
         $this->actingAs($this->cuenta);
-        $this->consultar()->assertSee('PROGRAMA VIH')->assertDontSee('3001234567');
+        $this->consultar()->assertSee('PROGRAMA VIH')->assertSee('3001234567')->assertDontSee('KR 40 70A 23');
 
         Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => [
             'consultar_paciente' => ['ver'],
         ]]);
         $this->actingAs($this->cuenta->fresh());
 
-        $this->consultar()->assertDontSee('PROGRAMA VIH');
+        $this->consultar()->assertDontSee('PROGRAMA VIH')->assertDontSee('3001234567');
 
         Rol::where('nombre', Rol::CONSULTA)->sole()->update(['permisos' => [
             'consultar_paciente' => ['ver', 'ver_completo'],
         ]]);
         $this->actingAs($this->cuenta->fresh());
 
-        $this->consultar()->assertSee('PROGRAMA VIH')->assertSee('3001234567');
+        $this->consultar()->assertSee('PROGRAMA VIH')->assertSee('3001234567')->assertSee('KR 40 70A 23');
     }
 
     public function test_marcarla_como_compartida_le_deja_solo_consulta(): void

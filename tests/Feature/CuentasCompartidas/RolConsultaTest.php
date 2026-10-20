@@ -14,6 +14,7 @@ use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
+use Livewire\Features\SupportTesting\Testable;
 use Tests\Concerns\RecorreElPanel;
 use Tests\TestCase;
 
@@ -61,13 +62,24 @@ class RolConsultaTest extends TestCase
         return $usuario;
     }
 
+    /** Lo que se lee en la pantalla, sin etiquetas y con los espacios juntos, para comprobar el orden. */
+    private function textoDe(Testable $pantalla): string
+    {
+        $texto = html_entity_decode(strip_tags($pantalla->html(stripInitialData: true)), ENT_QUOTES);
+
+        return trim(preg_replace('/\s+/u', ' ', $texto));
+    }
+
     /* ------------------------------------------------------------------ *
      *  El rol
      * ------------------------------------------------------------------ */
 
-    public function test_el_rol_consulta_solo_tiene_lo_basico_y_los_programas_de_consultar_paciente(): void
+    public function test_el_rol_consulta_solo_tiene_lo_basico_los_programas_y_el_contacto_de_consultar_paciente(): void
     {
-        $this->assertSame(['consultar_paciente' => ['ver', 'ver_programas']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
+        $this->assertSame(
+            ['consultar_paciente' => ['ver', 'ver_programas', 'ver_contacto']],
+            Rol::where('nombre', 'CONSULTA')->sole()->permisos,
+        );
         $this->assertTrue($this->cuenta->soloPuedeConsultar());
         $this->assertFalse($this->cuenta->puede('consultar_paciente.ver_completo'));
     }
@@ -103,6 +115,47 @@ class RolConsultaTest extends TestCase
         Rol::query()->delete();
 
         $migracion = require database_path('migrations/2026_10_16_100000_ver_programas_para_consulta.php');
+        $migracion->up();
+        $this->assertSame(0, Rol::count());
+
+        // Si el administrador le quitó «ver» a CONSULTA, no se le da lo de encima.
+        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['auditoria' => ['ver']]]);
+        $migracion->up();
+
+        $this->assertSame(['auditoria' => ['ver']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
+    }
+
+    public function test_la_migracion_le_da_ver_contacto_a_consulta_y_a_nadie_mas(): void
+    {
+        Rol::query()->delete();
+        // Como está hoy en producción, más algo que le sumó el administrador: no se pierde.
+        Rol::create(['nombre' => 'CONSULTA', 'permisos' => ['consultar_paciente' => ['ver', 'ver_programas'], 'auditoria' => ['ver']]]);
+        Rol::create(['nombre' => 'ORIENTADOR', 'permisos' => ['consultar_paciente' => ['ver', 'ver_completo'], 'pacientes' => ['ver']]]);
+        Rol::create(['nombre' => 'FARMACIA', 'permisos' => ['entrega' => ['ver']]]);
+
+        $migracion = require database_path('migrations/2026_10_20_100000_ver_contacto_para_consulta.php');
+        $migracion->up();
+
+        $despues = Rol::orderBy('nombre')->pluck('permisos', 'nombre')->all();
+
+        $this->assertSame(['consultar_paciente' => ['ver', 'ver_programas', 'ver_contacto'], 'auditoria' => ['ver']], $despues['CONSULTA']);
+        $this->assertSame(['consultar_paciente' => ['ver', 'ver_completo'], 'pacientes' => ['ver']], $despues['ORIENTADOR']);
+        $this->assertSame(['entrega' => ['ver']], $despues['FARMACIA']);
+
+        // Correrla dos veces no cambia nada.
+        $migracion->up();
+        $this->assertSame($despues, Rol::orderBy('nombre')->pluck('permisos', 'nombre')->all());
+
+        $migracion->down();
+
+        $this->assertSame(['consultar_paciente' => ['ver', 'ver_programas'], 'auditoria' => ['ver']], Rol::where('nombre', 'CONSULTA')->sole()->permisos);
+    }
+
+    public function test_la_migracion_del_contacto_no_crea_el_rol_ni_se_lo_da_a_quien_no_consulta(): void
+    {
+        Rol::query()->delete();
+
+        $migracion = require database_path('migrations/2026_10_20_100000_ver_contacto_para_consulta.php');
         $migracion->up();
         $this->assertSame(0, Rol::count());
 
@@ -204,15 +257,20 @@ class RolConsultaTest extends TestCase
             ->assertSee('E.S.E METROSALUD')
             ->assertSee('Ves los datos básicos')
             ->assertDontSee('MEDELLÍN')
-            ->assertDontSee('3001234567');
+            ->assertDontSee('KR 40 70A 23');
 
         // Ni en el estado de Livewire, que viaja al navegador aunque no se pinte.
         $afiliado = $pantalla->get('afiliado');
-        $this->assertSame([], array_diff(array_keys($afiliado), [...ConsultarPaciente::CAMPOS_BASICOS, 'programasEspeciales']));
+        $this->assertSame([], array_diff(
+            array_keys($afiliado),
+            [...ConsultarPaciente::CAMPOS_BASICOS, 'programasEspeciales', ...array_keys(ConsultarPaciente::CONTACTO_SAVIA)],
+        ));
 
-        foreach (['descripcionCiudadResidencia', 'telefonoMovil', 'discapacidad', 'nivelSisben', 'programas'] as $campo) {
+        // La dirección tampoco: `ver_contacto` es solo teléfono y correo.
+        foreach (['descripcionCiudadResidencia', 'direccion', 'discapacidad', 'nivelSisben', 'programas'] as $campo) {
             $this->assertArrayNotHasKey($campo, $afiliado);
         }
+        $this->assertStringNotContainsString('KR 40 70A 23', json_encode($pantalla->snapshot, JSON_UNESCAPED_UNICODE));
 
         // Municipio y categoría sí son de lo básico.
         $this->assertSame('BELLO', $afiliado['municipioAfiliacion']);
@@ -226,7 +284,7 @@ class RolConsultaTest extends TestCase
         $pantalla = $this->consultar()
             ->assertSee('PROGRAMA VIH')
             ->assertSee('1 programa(s) asociados al afiliado.')
-            ->assertSee('También ves los programas especiales y RIAS.')
+            ->assertSee('También ves los programas especiales y RIAS, el teléfono y el correo.')
             ->assertDontSee('Savia no reporta programas');
 
         $this->assertSame(
@@ -263,12 +321,97 @@ class RolConsultaTest extends TestCase
             ->assertDontSee('PROGRAMA VIH')
             ->assertDontSee('Programas especiales y RIAS')
             ->assertDontSee('Savia no reporta programas')
-            ->assertDontSee('También ves los programas');
+            ->assertDontSee('También ves');
 
         $afiliado = $pantalla->get('afiliado');
         $this->assertSame([], array_diff(array_keys($afiliado), ConsultarPaciente::CAMPOS_BASICOS));
         $this->assertArrayNotHasKey('programasEspeciales', $afiliado);
         $this->assertArrayNotHasKey('programas', $afiliado);
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  El contacto según Savia: celular, teléfono fijo y correo
+     * ------------------------------------------------------------------ */
+
+    public function test_ve_celular_telefono_fijo_y_correo_debajo_del_municipio(): void
+    {
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar();
+
+        $this->assertSame(
+            ['telefonoMovil' => '3001234567', 'telefono' => '6043005012', 'email' => 'juan@ejemplo.com'],
+            array_intersect_key($pantalla->get('afiliado'), ConsultarPaciente::CONTACTO_SAVIA),
+        );
+        // Con el permiso sí viaja en el snapshot: lo que revisa la prueba de quien solo tiene «ver».
+        $this->assertStringContainsString('juan@ejemplo.com', json_encode($pantalla->snapshot, JSON_UNESCAPED_UNICODE));
+
+        // En el encabezado, debajo del municipio y antes de las insignias.
+        $this->assertStringContainsString(
+            'Municipio: BELLO (ANTIOQUIA) Contacto según Savia Celular: 3001234567 Teléfono fijo: 6043005012 Correo: juan@ejemplo.com Afiliación: Activo',
+            $this->textoDe($pantalla),
+        );
+    }
+
+    public function test_si_savia_no_manda_el_contacto_dice_sin_dato_en_savia(): void
+    {
+        $this->saviaResponde(['telefonoMovil' => null, 'telefono' => null, 'email' => null]);
+        $this->entrarComoConsulta();
+
+        $this->assertStringContainsString(
+            'Contacto según Savia Celular: sin dato en Savia Teléfono fijo: sin dato en Savia Correo: sin dato en Savia',
+            $this->textoDe($this->consultar()),
+        );
+    }
+
+    public function test_cada_dato_que_falte_dice_sin_dato_en_savia_por_su_lado(): void
+    {
+        // En blanco cuenta como que no vino.
+        $this->saviaResponde(['telefono' => null, 'email' => '   ']);
+        $this->entrarComoConsulta();
+
+        $this->assertStringContainsString(
+            'Celular: 3001234567 Teléfono fijo: sin dato en Savia Correo: sin dato en Savia',
+            $this->textoDe($this->consultar()),
+        );
+    }
+
+    public function test_un_rol_con_solo_ver_no_ve_el_contacto_ni_le_llega_al_navegador(): void
+    {
+        Rol::create(['nombre' => 'SOLO_LO_BASICO', 'permisos' => ['consultar_paciente' => ['ver']]]);
+        $this->entrarComo('SOLO_LO_BASICO');
+
+        $pantalla = $this->consultar()
+            ->assertSee('Municipio: BELLO (ANTIOQUIA)')
+            ->assertDontSee('Contacto según Savia')
+            ->assertDontSee('Celular')
+            ->assertDontSee('sin dato en Savia');
+
+        $afiliado = $pantalla->get('afiliado');
+        foreach (array_keys(ConsultarPaciente::CONTACTO_SAVIA) as $campo) {
+            $this->assertArrayNotHasKey($campo, $afiliado);
+        }
+
+        // Ni en el HTML ni en el estado de Livewire (el snapshot), que es lo que recibe el navegador.
+        $alNavegador = $pantalla->html().json_encode($pantalla->snapshot, JSON_UNESCAPED_UNICODE);
+        foreach (['3001234567', '6043005012', 'juan@ejemplo.com'] as $dato) {
+            $this->assertStringNotContainsString($dato, $alNavegador);
+        }
+    }
+
+    public function test_con_ver_contacto_y_sin_programas_ve_el_contacto_y_no_los_programas(): void
+    {
+        Rol::create(['nombre' => 'SOLO_CONTACTO', 'permisos' => ['consultar_paciente' => ['ver', 'ver_contacto']]]);
+        $this->entrarComo('SOLO_CONTACTO');
+
+        $pantalla = $this->consultar()
+            ->assertSee('Contacto según Savia')
+            ->assertSee('3001234567')
+            ->assertSee('También ves el teléfono y el correo.')
+            ->assertDontSee('PROGRAMA VIH')
+            ->assertDontSee('MEDELLÍN');
+
+        $this->assertArrayNotHasKey('programasEspeciales', $pantalla->get('afiliado'));
     }
 
     public function test_el_administrador_le_quita_los_programas_desde_la_matriz(): void
@@ -371,10 +514,14 @@ class RolConsultaTest extends TestCase
     {
         $this->entrarComo('ORIENTADOR');
 
-        $this->consultar()
+        // El contacto, como antes en «Residencia y contacto», y además arriba.
+        $pantalla = $this->consultar()
             ->assertSee('PROGRAMA VIH')
             ->assertSee('MEDELLÍN')
+            ->assertSee('Teléfono móvil')
             ->assertDontSee('Ves los datos básicos');
+
+        $this->assertStringContainsString('Contacto según Savia Celular: 3001234567', $this->textoDe($pantalla));
     }
 
     /* ------------------------------------------------------------------ *

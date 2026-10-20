@@ -43,9 +43,13 @@ class Rol extends Model
                 // Solo los programas especiales y RIAS, encima de lo básico.
                 // Es lo del rol CONSULTA; `ver_completo` ya los incluye.
                 'ver_programas' => 'Ver programas especiales y RIAS',
-                // Programas especiales, discapacidad, Sisbén, contacto…: datos
-                // de salud. Se concede aparte para que el rol CONSULTA, que
-                // usan cuentas compartidas, no los vea.
+                // Solo celular, teléfono fijo y correo que reporta Savia,
+                // encima de lo básico. Es lo del rol CONSULTA; `ver_completo`
+                // ya los incluye.
+                'ver_contacto' => 'Ver teléfono y correo',
+                // Discapacidad, Sisbén, dirección…: datos de salud. Se concede
+                // aparte para que el rol CONSULTA, que usan cuentas
+                // compartidas, no los vea.
                 'ver_completo' => 'Ver todo lo que trae Savia',
             ],
         ],
