@@ -24,9 +24,12 @@ use Livewire\Attributes\Locked;
  *
  * - `consultar_paciente.ver`: lo básico (`CAMPOS_BASICOS`).
  * - `consultar_paciente.ver_programas`: además, los programas especiales y
- *   RIAS. Con `ver`, es lo del rol CONSULTA, que usan cuentas compartidas.
- * - `consultar_paciente.ver_completo`: todo, programas especiales y datos de
- *   salud incluidos.
+ *   RIAS.
+ * - `consultar_paciente.ver_contacto`: además, celular, teléfono fijo y
+ *   correo según Savia (`CONTACTO_SAVIA`). Con `ver` y `ver_programas`, es lo
+ *   del rol CONSULTA, que usan cuentas compartidas.
+ * - `consultar_paciente.ver_completo`: todo, programas especiales, contacto y
+ *   datos de salud incluidos.
  *
  * Lo que no se puede ver se quita **en el servidor**, antes de guardarlo en
  * `$afiliado`: lo que está en una propiedad pública de Livewire viaja al
@@ -71,6 +74,20 @@ class ConsultarPaciente extends Page implements HasForms
         'departamentoAfiliacion',
         'ipsprimaria',
         'sedeIPSPrimaria',
+    ];
+
+    /**
+     * El contacto que reporta Savia, con su etiqueta en el encabezado. Lo ve
+     * quien tenga `ver_contacto` o `ver_completo`. La dirección no está a
+     * propósito: sigue siendo de `ver_completo`.
+     *
+     * No confundir con `Paciente::CAMPOS_CONTACTO`, el contacto que confirma
+     * SISPAM: este solo se muestra, no se guarda.
+     */
+    public const CONTACTO_SAVIA = [
+        'telefonoMovil' => 'Celular',
+        'telefono' => 'Teléfono fijo',
+        'email' => 'Correo',
     ];
 
     protected static ?string $navigationIcon = 'heroicon-o-magnifying-glass';
@@ -203,7 +220,9 @@ class ConsultarPaciente extends Page implements HasForms
         }
 
         // Lo que no se puede ver no sale del servidor.
-        $this->afiliado = $this->veTodo ? $afiliado : self::soloLoBasico($afiliado, conProgramas: $this->veProgramas);
+        $this->afiliado = $this->veTodo
+            ? $afiliado
+            : self::soloLoBasico($afiliado, conProgramas: $this->veProgramas, conContacto: $this->veContacto);
 
         $paciente = Paciente::where('tipo_documento', $afiliado['tipoDocumentoAfiliado'] ?? $datos['tipo_documento'])
             ->where('numero_documento', $afiliado['documentoAfiliado'] ?? $datos['numero_documento'])
@@ -266,15 +285,20 @@ class ConsultarPaciente extends Page implements HasForms
     }
 
     /**
-     * El afiliado recortado a `CAMPOS_BASICOS` (y a los programas, si los
-     * puede ver), sin la categoría si el régimen no es contributivo.
+     * El afiliado recortado a `CAMPOS_BASICOS` (y a los programas y el
+     * contacto, si los puede ver), sin la categoría si el régimen no es
+     * contributivo.
      *
      * @param  array<string, mixed>  $afiliado
      * @return array<string, mixed>
      */
-    private static function soloLoBasico(array $afiliado, bool $conProgramas): array
+    private static function soloLoBasico(array $afiliado, bool $conProgramas, bool $conContacto): array
     {
-        $campos = $conProgramas ? [...self::CAMPOS_BASICOS, 'programasEspeciales'] : self::CAMPOS_BASICOS;
+        $campos = [
+            ...self::CAMPOS_BASICOS,
+            ...($conProgramas ? ['programasEspeciales'] : []),
+            ...($conContacto ? array_keys(self::CONTACTO_SAVIA) : []),
+        ];
 
         $basico = array_intersect_key($afiliado, array_flip($campos));
 
@@ -330,6 +354,26 @@ class ConsultarPaciente extends Page implements HasForms
     public function getVeProgramasProperty(): bool
     {
         return $this->veTodo || (bool) auth()->user()?->puede('consultar_paciente.ver_programas');
+    }
+
+    /** Si ve el teléfono y el correo de Savia: con `ver_completo`, o solo esos con `ver_contacto`. */
+    public function getVeContactoProperty(): bool
+    {
+        return $this->veTodo || (bool) auth()->user()?->puede('consultar_paciente.ver_contacto');
+    }
+
+    /**
+     * «También ves …» de quien no ve todo: lo que le suman `ver_programas` y
+     * `ver_contacto`. Null si solo ve lo básico.
+     */
+    public function getTambienVesProperty(): ?string
+    {
+        $extras = array_filter([
+            $this->veProgramas ? 'los programas especiales y RIAS' : null,
+            $this->veContacto ? 'el teléfono y el correo' : null,
+        ]);
+
+        return $extras === [] ? null : 'También ves '.implode(', ', $extras).'.';
     }
 
     public function getPuedeRegistrarProperty(): bool
@@ -399,6 +443,23 @@ class ConsultarPaciente extends Page implements HasForms
         return str_starts_with(Paciente::normalizarTexto($categoria), 'categoria')
             ? $categoria
             : "Categoría {$categoria}";
+    }
+
+    /**
+     * Celular, teléfono fijo y correo según Savia, por etiqueta. El que no
+     * vino queda en null y la vista dice «sin dato en Savia».
+     *
+     * @return array<string, string|null>
+     */
+    public function getContactoSaviaProperty(): array
+    {
+        $contacto = [];
+
+        foreach (self::CONTACTO_SAVIA as $campo => $etiqueta) {
+            $contacto[$etiqueta] = $this->textoDelAfiliado($campo) ?: null;
+        }
+
+        return $contacto;
     }
 
     /** Un campo del afiliado como texto; cadena vacía si no vino. */

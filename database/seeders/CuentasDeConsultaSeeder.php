@@ -11,8 +11,8 @@ use Illuminate\Database\Seeder;
  *
  * Las usan varias personas de la sede, a la vez y en distintos equipos, para
  * consultar pacientes en Savia. Su rol (grupo `CONSULTA` en Authentik) solo
- * deja ver lo básico y los programas especiales y RIAS: no registran, no
- * editan y no entran a nada más.
+ * deja ver lo básico, los programas especiales y RIAS, y el teléfono y el
+ * correo según Savia: no registran, no editan y no entran a nada más.
  *
  * El documento es el username en Authentik: tiene que escribirse igual allá.
  *
