@@ -127,7 +127,23 @@ class ConsultarPacienteTest extends TestCase
 
         // El administrador ve todo, y además arriba, antes de los grupos.
         $this->assertMatchesRegularExpression(
-            '/JUAN JOSE RAMIREZ PULGARIN.*Municipio: BELLO \(ANTIOQUIA\).*CONTRIBUTIVO.*Categoría A.*Identificación del afiliado/s',
+            '/JUAN JOSE RAMIREZ PULGARIN.*Municipio de afiliación: BELLO \(ANTIOQUIA\).*Municipio de residencia: MEDELLÍN.*CONTRIBUTIVO.*Categoría A.*Identificación del afiliado/s',
+            $this->buscar()->html(stripInitialData: true),
+        );
+    }
+
+    public function test_todos_ven_la_portabilidad_debajo_del_municipio(): void
+    {
+        $this->fakeExitoso([
+            'municipioAfiliacion' => 'BELLO',
+            'tipoPortabilidad' => 'TEMPORAL',
+            'ciudadPortabilidad' => 'RIONEGRO',
+            'departamentoPortabilidad' => 'ANTIOQUIA',
+        ]);
+
+        // El administrador también, arriba y antes de los grupos.
+        $this->assertMatchesRegularExpression(
+            '/Municipio de afiliación: BELLO.*Municipio de residencia: MEDELLÍN.*Portabilidad: TEMPORAL · RIONEGRO \(ANTIOQUIA\).*Identificación del afiliado/s',
             $this->buscar()->html(stripInitialData: true),
         );
     }

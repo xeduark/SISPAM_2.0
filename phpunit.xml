@@ -18,6 +18,8 @@
         </include>
     </source>
     <php>
+        <!-- La suite completa pasa de los 128 MB que trae el PHP de XAMPP. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
