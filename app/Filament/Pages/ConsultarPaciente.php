@@ -50,12 +50,13 @@ class ConsultarPaciente extends Page implements HasForms
     /**
      * Lo que ve quien solo tiene `consultar_paciente.ver`: identificación,
      * estado de la afiliación, régimen (con la categoría A, B o C si es
-     * contributivo), municipio de afiliación e IPS primaria. Lista blanca: un
-     * campo nuevo que agregue Savia no se ve hasta que alguien lo ponga aquí.
+     * contributivo), municipio de afiliación y de residencia, IPS primaria y
+     * portabilidad. Lista blanca: un campo nuevo que agregue Savia no se ve
+     * hasta que alguien lo ponga aquí.
      *
-     * El municipio y la categoría salen además en el encabezado, para verlos
-     * sin bajar en la pantalla. La categoría solo es del contributivo: en otro
-     * régimen no se manda, aunque Savia la traiga (`soloLoBasico()`).
+     * Los dos municipios, la categoría y la portabilidad salen además en el
+     * encabezado, para verlos sin bajar en la pantalla. La categoría solo es del contributivo: en otro régimen no se manda, aunque
+     * Savia la traiga (`soloLoBasico()`).
      */
     public const CAMPOS_BASICOS = [
         'tipoDocumentoAfiliado',
@@ -72,8 +73,14 @@ class ConsultarPaciente extends Page implements HasForms
         'municipioAfiliacion',
         'ciudadAfiliacion',
         'departamentoAfiliacion',
+        'descripcionCiudadResidencia',
         'ipsprimaria',
         'sedeIPSPrimaria',
+        'tipoPortabilidad',
+        'ipsportabilidad',
+        'sedeIPSPortabilidad',
+        'ciudadPortabilidad',
+        'departamentoPortabilidad',
     ];
 
     /**
@@ -408,9 +415,10 @@ class ConsultarPaciente extends Page implements HasForms
 
     /**
      * «BELLO (ANTIOQUIA)»: el municipio de afiliación o, si no viene, la
-     * ciudad. Null si Savia no mandó ninguno de los dos.
+     * ciudad de afiliación, con su departamento. Null si Savia no mandó
+     * ninguno de los dos: la residencia tiene su propia línea y no lo suple.
      */
-    public function getMunicipioProperty(): ?string
+    public function getMunicipioAfiliacionProperty(): ?string
     {
         $municipio = $this->textoDelAfiliado('municipioAfiliacion') ?: $this->textoDelAfiliado('ciudadAfiliacion');
 
@@ -421,6 +429,37 @@ class ConsultarPaciente extends Page implements HasForms
         $departamento = $this->textoDelAfiliado('departamentoAfiliacion');
 
         return $departamento === '' ? $municipio : "{$municipio} ({$departamento})";
+    }
+
+    /**
+     * «MEDELLÍN»: la ciudad de residencia, sin departamento, porque de la
+     * residencia Savia solo manda el código. Null si no viene.
+     */
+    public function getMunicipioResidenciaProperty(): ?string
+    {
+        $residencia = $this->textoDelAfiliado('descripcionCiudadResidencia');
+
+        return $residencia === '' ? null : $residencia;
+    }
+
+    /**
+     * «TEMPORAL · RIONEGRO (ANTIOQUIA) · IPS SEDE»: tipo, ciudad y IPS de la
+     * portabilidad, con lo que venga y sin separadores sobrantes. Null si
+     * Savia no mandó ninguno de esos campos.
+     */
+    public function getPortabilidadProperty(): ?string
+    {
+        $ciudad = $this->textoDelAfiliado('ciudadPortabilidad');
+        $departamento = $this->textoDelAfiliado('departamentoPortabilidad');
+
+        $partes = array_filter([
+            $this->textoDelAfiliado('tipoPortabilidad'),
+            // Si solo vino uno de los dos, va solo y sin paréntesis.
+            $ciudad !== '' && $departamento !== '' ? "{$ciudad} ({$departamento})" : $ciudad.$departamento,
+            trim($this->textoDelAfiliado('ipsportabilidad').' '.$this->textoDelAfiliado('sedeIPSPortabilidad')),
+        ], fn (string $parte) => $parte !== '');
+
+        return $partes === [] ? null : implode(' · ', $partes);
     }
 
     public function getEsContributivoProperty(): bool

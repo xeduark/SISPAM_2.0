@@ -171,11 +171,21 @@ hace falta que la IP del equipo esté autorizada por Savia.
   les asigna el grupo CONSULTA en Authentik. La migración
   `2026_10_14_100000_cuentas_compartidas_con_rol_consulta` arregló las que ya existían.
 - **Ven lo básico** (`ConsultarPaciente::CAMPOS_BASICOS`): identificación, estado, régimen
-  (con la categoría A, B o C si es contributivo), municipio de afiliación e IPS primaria.
-  Municipio y categoría salen en el encabezado del resultado, sin bajar, para todos (desde la
+  (con la categoría A, B o C si es contributivo), municipio de afiliación y de residencia,
+  IPS primaria y portabilidad.
+  Municipios y categoría salen en el encabezado del resultado, sin bajar, para todos (desde la
   v1.1.2); la categoría solo se muestra, no se guarda. El resto se quita en el servidor, porque
   el estado de Livewire viaja al navegador. Lo completo es `consultar_paciente.ver_completo`; la migración
   `2026_10_13_110000_ver_todo_lo_de_savia` se lo dio a todo rol que ya consultaba.
+- **Municipio de afiliación, de residencia y portabilidad, cada uno en su línea** (desde la
+  v1.1.4, sin permiso nuevo: son de lo básico). «Municipio de afiliación: BELLO (ANTIOQUIA)»
+  (`municipioAfiliacion`, o `ciudadAfiliacion` si no viene, con `departamentoAfiliacion`) y
+  «Municipio de residencia: MEDELLÍN» (`descripcionCiudadResidencia`, sin departamento: de la
+  residencia Savia solo manda el código). El que no venga dice «sin dato en Savia»; **la
+  residencia no reemplaza a la afiliación**. Debajo, «Portabilidad: <tipo> · <ciudad> (<departamento>) · <IPS>
+  <sede>» con lo que venga y sin separadores sobrantes (`ConsultarPaciente::getPortabilidadProperty()`);
+  sin ninguno de esos cinco campos, «Portabilidad: no registra en Savia». Los códigos
+  (`codMunicipioPortabilidad`, `codCiudadResidencia`…) siguen fuera de lo básico.
 - **Ven también los programas especiales y RIAS** (desde la v1.1.2): acción
   `consultar_paciente.ver_programas`, que los muestra a quien solo tiene lo básico (con
   `ver_completo` ya se veían). Sin ella, `programasEspeciales` no sale del servidor. La sección
@@ -186,7 +196,7 @@ hace falta que la IP del equipo esté autorizada por Savia.
 - **Ven también el teléfono y el correo que manda Savia** (desde la v1.1.3): acción
   `consultar_paciente.ver_contacto` («Ver teléfono y correo»), mismo patrón que `ver_programas`.
   Son `telefonoMovil`, `telefono` y `email` (`ConsultarPaciente::CONTACTO_SAVIA`); sin la acción
-  no salen del servidor. Van en el encabezado, debajo del municipio, en el bloque «Contacto según
+  no salen del servidor. Van en el encabezado, debajo de los municipios y la portabilidad, en el bloque «Contacto según
   Savia» (Celular, Teléfono fijo, Correo); el que no venga dice «sin dato en Savia». La
   dirección no entra: sigue siendo de `ver_completo`. Solo se muestran: el contacto que se
   guarda sigue siendo el que confirma SISPAM (`Paciente::CAMPOS_CONTACTO`). A las bases que ya

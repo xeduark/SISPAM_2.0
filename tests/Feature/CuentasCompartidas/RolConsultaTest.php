@@ -256,7 +256,6 @@ class RolConsultaTest extends TestCase
             ->assertSee('CONTRIBUTIVO')
             ->assertSee('E.S.E METROSALUD')
             ->assertSee('Ves los datos básicos')
-            ->assertDontSee('MEDELLÍN')
             ->assertDontSee('KR 40 70A 23');
 
         // Ni en el estado de Livewire, que viaja al navegador aunque no se pinte.
@@ -267,14 +266,50 @@ class RolConsultaTest extends TestCase
         ));
 
         // La dirección tampoco: `ver_contacto` es solo teléfono y correo.
-        foreach (['descripcionCiudadResidencia', 'direccion', 'discapacidad', 'nivelSisben', 'programas'] as $campo) {
+        foreach (['direccion', 'discapacidad', 'nivelSisben', 'programas'] as $campo) {
             $this->assertArrayNotHasKey($campo, $afiliado);
         }
         $this->assertStringNotContainsString('KR 40 70A 23', json_encode($pantalla->snapshot, JSON_UNESCAPED_UNICODE));
 
-        // Municipio y categoría sí son de lo básico.
+        // Municipio, categoría y ciudad de residencia sí son de lo básico.
         $this->assertSame('BELLO', $afiliado['municipioAfiliacion']);
         $this->assertSame('B', $afiliado['categoriaIBC']);
+        $this->assertSame('MEDELLÍN', $afiliado['descripcionCiudadResidencia']);
+    }
+
+    public function test_lo_que_no_esta_en_campos_basicos_sigue_sin_llegar_al_navegador(): void
+    {
+        // Los vecinos de lo que se agregó en la v1.1.4: los códigos de la
+        // portabilidad y de la residencia, el barrio y la comuna no son de lo básico.
+        $this->saviaResponde([
+            'tipoPortabilidad' => 'TEMPORAL',
+            'ciudadPortabilidad' => 'RIONEGRO',
+            'codMunicipioPortabilidad' => '05615',
+            'codDepartamentoPortabilidad' => '05',
+            'codCiudadResidencia' => '05001',
+            'codDepartamentoResidencia' => '05',
+            'barrio' => 'LAURELES ESTADIO',
+            'comuna' => 'COMUNA ONCE',
+        ]);
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar()->assertSee('Portabilidad: TEMPORAL · RIONEGRO');
+
+        $afiliado = $pantalla->get('afiliado');
+        $this->assertSame([], array_diff(
+            array_keys($afiliado),
+            [...ConsultarPaciente::CAMPOS_BASICOS, 'programasEspeciales', ...array_keys(ConsultarPaciente::CONTACTO_SAVIA)],
+        ));
+
+        foreach (['codMunicipioPortabilidad', 'codDepartamentoPortabilidad', 'codCiudadResidencia', 'codDepartamentoResidencia', 'barrio', 'comuna', 'direccion'] as $campo) {
+            $this->assertArrayNotHasKey($campo, $afiliado);
+        }
+
+        // Ni en el HTML ni en el snapshot, que es lo que recibe el navegador.
+        $alNavegador = $pantalla->html().json_encode($pantalla->snapshot, JSON_UNESCAPED_UNICODE);
+        foreach (['LAURELES ESTADIO', 'COMUNA ONCE', 'KR 40 70A 23'] as $dato) {
+            $this->assertStringNotContainsString($dato, $alNavegador);
+        }
     }
 
     public function test_ve_los_programas_especiales_y_rias_debajo_del_encabezado(): void
@@ -346,9 +381,9 @@ class RolConsultaTest extends TestCase
         // Con el permiso sí viaja en el snapshot: lo que revisa la prueba de quien solo tiene «ver».
         $this->assertStringContainsString('juan@ejemplo.com', json_encode($pantalla->snapshot, JSON_UNESCAPED_UNICODE));
 
-        // En el encabezado, debajo del municipio y antes de las insignias.
+        // En el encabezado, debajo de los municipios y la portabilidad, y antes de las insignias.
         $this->assertStringContainsString(
-            'Municipio: BELLO (ANTIOQUIA) Contacto según Savia Celular: 3001234567 Teléfono fijo: 6043005012 Correo: juan@ejemplo.com Afiliación: Activo',
+            'Municipio de afiliación: BELLO (ANTIOQUIA) Municipio de residencia: MEDELLÍN Portabilidad: no registra en Savia Contacto según Savia Celular: 3001234567 Teléfono fijo: 6043005012 Correo: juan@ejemplo.com Afiliación: Activo',
             $this->textoDe($pantalla),
         );
     }
@@ -382,7 +417,7 @@ class RolConsultaTest extends TestCase
         $this->entrarComo('SOLO_LO_BASICO');
 
         $pantalla = $this->consultar()
-            ->assertSee('Municipio: BELLO (ANTIOQUIA)')
+            ->assertSee('Municipio de afiliación: BELLO (ANTIOQUIA)')
             ->assertDontSee('Contacto según Savia')
             ->assertDontSee('Celular')
             ->assertDontSee('sin dato en Savia');
@@ -409,7 +444,7 @@ class RolConsultaTest extends TestCase
             ->assertSee('3001234567')
             ->assertSee('También ves el teléfono y el correo.')
             ->assertDontSee('PROGRAMA VIH')
-            ->assertDontSee('MEDELLÍN');
+            ->assertDontSee('KR 40 70A 23');
 
         $this->assertArrayNotHasKey('programasEspeciales', $pantalla->get('afiliado'));
     }
@@ -425,19 +460,19 @@ class RolConsultaTest extends TestCase
     }
 
     /* ------------------------------------------------------------------ *
-     *  Municipio y categoría, arriba con el nombre
+     *  Municipios y categoría, arriba con el nombre
      * ------------------------------------------------------------------ */
 
-    public function test_ve_el_municipio_y_la_categoria_de_un_contributivo_en_el_encabezado(): void
+    public function test_ve_los_municipios_y_la_categoria_de_un_contributivo_en_el_encabezado(): void
     {
         $this->entrarComoConsulta();
 
         $pantalla = $this->consultar()
-            ->assertSee('Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio e IPS primaria.');
+            ->assertSee('Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio de afiliación y de residencia, IPS primaria y portabilidad.');
 
         // En el encabezado: con el nombre y junto a la insignia del régimen.
         $this->assertMatchesRegularExpression(
-            '/JUAN JOSE RAMIREZ PULGARIN.*Municipio: BELLO \(ANTIOQUIA\).*CONTRIBUTIVO.*Categoría B.*No registrado en SISPAM/s',
+            '/JUAN JOSE RAMIREZ PULGARIN.*Municipio de afiliación: BELLO \(ANTIOQUIA\).*Municipio de residencia: MEDELLÍN.*CONTRIBUTIVO.*Categoría B.*No registrado en SISPAM/s',
             $pantalla->html(stripInitialData: true),
         );
     }
@@ -460,7 +495,7 @@ class RolConsultaTest extends TestCase
 
         $pantalla = $this->consultar()
             ->assertSee('SUBSIDIADO')
-            ->assertSee('Municipio: BELLO (ANTIOQUIA)')
+            ->assertSee('Municipio de afiliación: BELLO (ANTIOQUIA)')
             ->assertDontSee('Categoría A')
             ->assertDontSee('Categoría IBC')
             ->assertDontSee('Categoría: sin dato en Savia');
@@ -475,7 +510,18 @@ class RolConsultaTest extends TestCase
 
         $this->consultar()
             ->assertSee('Categoría: sin dato en Savia')
-            ->assertSee('Municipio: BELLO (ANTIOQUIA)');
+            ->assertSee('Municipio de afiliación: BELLO (ANTIOQUIA)');
+    }
+
+    public function test_ve_el_municipio_de_afiliacion_y_el_de_residencia_cada_uno_en_su_linea(): void
+    {
+        $this->entrarComoConsulta();
+
+        // La residencia sin departamento: de ella Savia solo manda el código.
+        $this->assertStringContainsString(
+            'Municipio de afiliación: BELLO (ANTIOQUIA) Municipio de residencia: MEDELLÍN Portabilidad:',
+            $this->textoDe($this->consultar()),
+        );
     }
 
     public function test_sin_municipio_usa_la_ciudad_de_afiliacion(): void
@@ -483,15 +529,129 @@ class RolConsultaTest extends TestCase
         $this->saviaResponde(['municipioAfiliacion' => '', 'ciudadAfiliacion' => 'ENVIGADO']);
         $this->entrarComoConsulta();
 
-        $this->consultar()->assertSee('Municipio: ENVIGADO (ANTIOQUIA)');
+        // La ciudad también es de la afiliación, así que va con su departamento.
+        $this->consultar()
+            ->assertSee('Municipio de afiliación: ENVIGADO (ANTIOQUIA)')
+            ->assertSee('Municipio de residencia: MEDELLÍN');
     }
 
-    public function test_sin_municipio_ni_ciudad_dice_que_no_hay_dato(): void
+    public function test_sin_municipio_de_afiliacion_la_residencia_no_ocupa_su_lugar(): void
     {
-        $this->saviaResponde(['municipioAfiliacion' => null, 'departamentoAfiliacion' => null]);
+        // En blanco cuenta como que no vino.
+        $this->saviaResponde(['municipioAfiliacion' => '  ', 'ciudadAfiliacion' => '']);
         $this->entrarComoConsulta();
 
-        $this->consultar()->assertSee('Municipio: sin dato en Savia');
+        $this->assertStringContainsString(
+            'Municipio de afiliación: sin dato en Savia Municipio de residencia: MEDELLÍN',
+            $this->textoDe($this->consultar()->assertDontSee('(residencia)')),
+        );
+    }
+
+    public function test_sin_municipio_de_residencia_dice_que_no_hay_dato(): void
+    {
+        $this->saviaResponde(['descripcionCiudadResidencia' => '   ']);
+        $this->entrarComoConsulta();
+
+        $this->assertStringContainsString(
+            'Municipio de afiliación: BELLO (ANTIOQUIA) Municipio de residencia: sin dato en Savia',
+            $this->textoDe($this->consultar()),
+        );
+    }
+
+    public function test_sin_ninguno_de_los_dos_municipios_cada_linea_dice_que_no_hay_dato(): void
+    {
+        $this->saviaResponde(['municipioAfiliacion' => null, 'departamentoAfiliacion' => null, 'descripcionCiudadResidencia' => null]);
+        $this->entrarComoConsulta();
+
+        $this->assertStringContainsString(
+            'Municipio de afiliación: sin dato en Savia Municipio de residencia: sin dato en Savia',
+            $this->textoDe($this->consultar()),
+        );
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Portabilidad, debajo del municipio
+     * ------------------------------------------------------------------ */
+
+    public function test_ve_la_portabilidad_debajo_del_municipio_cuando_savia_la_manda(): void
+    {
+        $portabilidad = [
+            'tipoPortabilidad' => 'TEMPORAL',
+            'ipsportabilidad' => 'E.S.E HOSPITAL SAN JUAN DE DIOS',
+            'sedeIPSPortabilidad' => 'SEDE CENTRO',
+            'ciudadPortabilidad' => 'RIONEGRO',
+            'departamentoPortabilidad' => 'ANTIOQUIA',
+        ];
+        $this->saviaResponde($portabilidad);
+        $this->entrarComoConsulta();
+
+        $pantalla = $this->consultar();
+
+        // En el encabezado, entre los municipios y el contacto.
+        $this->assertStringContainsString(
+            'Municipio de afiliación: BELLO (ANTIOQUIA) Municipio de residencia: MEDELLÍN Portabilidad: TEMPORAL · RIONEGRO (ANTIOQUIA) · E.S.E HOSPITAL SAN JUAN DE DIOS SEDE CENTRO Contacto según Savia',
+            $this->textoDe($pantalla),
+        );
+
+        // Los cinco llegan: son de lo básico.
+        $this->assertEquals($portabilidad, array_intersect_key($pantalla->get('afiliado'), $portabilidad));
+    }
+
+    public function test_la_portabilidad_lleva_solo_lo_que_venga_sin_separadores_sobrantes(): void
+    {
+        $this->entrarComoConsulta();
+
+        $casos = [
+            'Portabilidad: RIONEGRO · E.S.E HOSPITAL SAN JUAN DE DIOS Contacto' => [
+                'ciudadPortabilidad' => 'RIONEGRO',
+                'ipsportabilidad' => 'E.S.E HOSPITAL SAN JUAN DE DIOS',
+            ],
+            'Portabilidad: TEMPORAL · ANTIOQUIA · SEDE CENTRO Contacto' => [
+                'tipoPortabilidad' => 'TEMPORAL',
+                'departamentoPortabilidad' => 'ANTIOQUIA',
+                'sedeIPSPortabilidad' => 'SEDE CENTRO',
+            ],
+            'Portabilidad: TEMPORAL Contacto' => [
+                'tipoPortabilidad' => 'TEMPORAL',
+                'ciudadPortabilidad' => ' ',
+            ],
+        ];
+
+        // Cada caso parte sin portabilidad: un campo en null se quita de la respuesta.
+        $sinPortabilidad = array_fill_keys(
+            ['tipoPortabilidad', 'ipsportabilidad', 'sedeIPSPortabilidad', 'ciudadPortabilidad', 'departamentoPortabilidad'],
+            null,
+        );
+
+        foreach ($casos as $esperado => $portabilidad) {
+            $this->saviaResponde([...$sinPortabilidad, ...$portabilidad]);
+
+            $texto = $this->textoDe($this->consultar());
+
+            $this->assertStringContainsString($esperado, $texto);
+            $this->assertStringNotContainsString('· ·', $texto);
+            $this->assertStringNotContainsString('()', $texto);
+        }
+    }
+
+    public function test_sin_portabilidad_dice_que_no_registra_en_savia(): void
+    {
+        // En blanco cuenta como que no vino.
+        $this->saviaResponde(['tipoPortabilidad' => '', 'ipsportabilidad' => '   ']);
+        $this->entrarComoConsulta();
+
+        $this->consultar()
+            ->assertSee('Portabilidad: no registra en Savia')
+            ->assertDontSee('Portabilidad: ·');
+    }
+
+    public function test_un_rol_con_solo_ver_tambien_ve_la_portabilidad(): void
+    {
+        Rol::create(['nombre' => 'SOLO_LO_BASICO', 'permisos' => ['consultar_paciente' => ['ver']]]);
+        $this->saviaResponde(['tipoPortabilidad' => 'TEMPORAL', 'ciudadPortabilidad' => 'RIONEGRO']);
+        $this->entrarComo('SOLO_LO_BASICO');
+
+        $this->consultar()->assertSee('Portabilidad: TEMPORAL · RIONEGRO');
     }
 
     public function test_puede_consultar_con_pt(): void
@@ -503,7 +663,7 @@ class RolConsultaTest extends TestCase
             ->assertHasNoFormErrors()
             ->assertSet('afiliado.tipoDocumentoAfiliado', 'PT')
             ->assertSee('JUAN JOSE RAMIREZ PULGARIN')
-            ->assertSee('Municipio: BELLO (ANTIOQUIA)');
+            ->assertSee('Municipio de afiliación: BELLO (ANTIOQUIA)');
 
         Http::assertSent(fn ($peticion) => str_contains($peticion->url(), 'consultar-afiliado')
             && $peticion['tipoDocumento'] === 'PT'

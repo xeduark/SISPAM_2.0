@@ -70,7 +70,13 @@
                         </p>
                         {{-- Arriba, con el nombre: las sedes lo necesitan sin bajar en la pantalla. --}}
                         <p class="mt-1 text-sm font-medium text-gray-950 dark:text-white">
-                            Municipio: {{ $this->municipio ?? 'sin dato en Savia' }}
+                            Municipio de afiliación: {{ $this->municipioAfiliacion ?? 'sin dato en Savia' }}
+                        </p>
+                        <p class="mt-1 text-sm font-medium text-gray-950 dark:text-white">
+                            Municipio de residencia: {{ $this->municipioResidencia ?? 'sin dato en Savia' }}
+                        </p>
+                        <p class="mt-1 break-words text-sm font-medium text-gray-950 dark:text-white">
+                            Portabilidad: {{ $this->portabilidad ?? 'no registra en Savia' }}
                         </p>
 
                         {{-- Contacto según Savia (ver_completo o ver_contacto). Sin el
@@ -160,7 +166,7 @@
 
                 @unless ($this->veTodo)
                     <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                        Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio e IPS primaria.
+                        Ves los datos básicos de la afiliación: identificación, estado, régimen (con la categoría, si es contributivo), municipio de afiliación y de residencia, IPS primaria y portabilidad.
                         {{ $this->tambienVes }}
                     </p>
                 @endunless

@@ -219,7 +219,8 @@ Reglas:
   `2026_10_20_100000_ver_contacto_para_consulta`).
 - **Consultar paciente tiene cuatro acciones.** `ver` muestra lo básico
   (identificación, estado de la afiliación, régimen —con la categoría si es
-  contributivo—, municipio de afiliación e IPS primaria);
+  contributivo—, municipio de afiliación y de residencia, IPS primaria y
+  portabilidad);
   `ver_programas` le suma solo los programas especiales y RIAS;
   `ver_contacto`, solo el celular, el teléfono fijo y el correo según Savia;
   `ver_completo` muestra además programas especiales, discapacidad, Sisbén,
@@ -339,18 +340,33 @@ y no entran a nada más.
   paciente.
 - **Lo básico de Savia:** nombre, documento, fecha de nacimiento, estado de la
   afiliación con su causa, régimen, categoría (A, B o C, solo si es contributivo),
-  municipio de afiliación e IPS primaria (`ConsultarPaciente::CAMPOS_BASICOS`,
-  lista blanca). Municipio y categoría salen en el encabezado del resultado, sin
-  bajar en la pantalla; si Savia no los manda, dice «sin dato en Savia». Lo
-  demás se quita **en el servidor**: lo que está en una propiedad pública de
-  Livewire viaja al navegador aunque la vista no lo pinte.
+  municipio de afiliación y de residencia, IPS primaria y portabilidad
+  (`ConsultarPaciente::CAMPOS_BASICOS`, lista blanca). Municipios y categoría
+  salen en el encabezado del resultado, sin bajar en la pantalla; si Savia no
+  los manda, dice «sin dato en Savia». Lo demás se quita **en el servidor**: lo
+  que está en una propiedad pública de Livewire viaja al navegador aunque la
+  vista no lo pinte.
+- **Dos municipios, cada uno en su línea** (desde la v1.1.4):
+  «Municipio de afiliación: BELLO (ANTIOQUIA)» (`municipioAfiliacion`, o
+  `ciudadAfiliacion` si no viene, con `departamentoAfiliacion`) y
+  «Municipio de residencia: MEDELLÍN» (`descripcionCiudadResidencia`), sin
+  departamento, porque de la residencia Savia solo manda el código. El que no
+  venga dice «sin dato en Savia»: la residencia no ocupa el lugar de la
+  afiliación.
+- **La portabilidad** (desde la v1.1.4): en el encabezado, debajo de los
+  municipios, «Portabilidad: TEMPORAL · RIONEGRO (ANTIOQUIA) · IPS SEDE»
+  (`tipoPortabilidad`, `ciudadPortabilidad`, `departamentoPortabilidad`,
+  `ipsportabilidad` y `sedeIPSPortabilidad`), con lo que venga y sin
+  separadores sobrantes. Si Savia no manda ninguno: «Portabilidad: no registra
+  en Savia». Los códigos de municipio y departamento de la portabilidad no son
+  de lo básico.
 - **Los programas especiales y RIAS también** (`ver_programas`, desde la
   v1.1.2), en su sección justo debajo del encabezado. Si Savia no reporta
   ninguno, la sección dice «Savia no reporta programas ni RIAS para este
   afiliado». Si el administrador le quita la acción al rol, los programas
   dejan de salir del servidor.
 - **El teléfono y el correo según Savia también** (`ver_contacto`, desde la
-  v1.1.3): en el encabezado, debajo del municipio, el bloque «Contacto según
+  v1.1.3): en el encabezado, debajo de los municipios y la portabilidad, el bloque «Contacto según
   Savia» con Celular, Teléfono fijo y Correo (`telefonoMovil`, `telefono` y
   `email`). El que Savia no mande dice «sin dato en Savia». La dirección no
   entra (sigue siendo de `ver_completo`), y nada de esto se guarda: el
